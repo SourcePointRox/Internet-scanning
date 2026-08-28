@@ -1,0 +1,76 @@
+# NetAtlas 全局配置
+project:
+  name: NetAtlas
+  contact_email: "netatlas-research@example.org"   # 请替换为你的真实联系邮箱（opt-out 通道）
+  user_agent: "NetAtlas/1.0 (academic internet measurement; contact: netatlas-research@example.org)"
+
+paths:
+  root: "D:/Internet-scanning"
+  bin: "bin"                       # masscan.exe / zgrab2.exe 存放目录
+  data_raw: "data/raw"             # 原始层：zstd NDJSON 分片
+  data_parquet: "data/parquet"     # 列式层：Parquet 分区表
+  data_meta: "data/meta"           # SQLite 元数据/状态库
+  data_geoip: "data/geoip"         # GeoLite2 mmdb（需自行下载）
+  seeds: "data/seeds"              # IPv6 hitlist 种子缓存
+  logs: "logs"
+
+bandwidth:
+  upload_mbps: 25.0                # 物理上行带宽
+  global_cap_pct: 80               # 全局令牌桶 = 上行 * 80%
+  quotas:                          # 各消费者配额（Mbps，总和 <= 全局令牌桶）
+    l4_scan: 12.0
+    l7_grab: 8.0
+    dns_enrich: 2.0
+    reserve: 3.0
+
+l4:
+  scanner: "masscan"               # masscan | zmap(linux only)
+  phase1_ports: "21-23,25,53,80,110,111,135,139,143,443,445,465,587,993,995,1433,1521,1883,2375,3000,3306,3389,5432,5900,6379,7547,8000,8080,8443,8888,9000,9200,11211,27017,50070"
+  phase2_ports: "0-65535"          # 仅对存活主机
+  default_rate_pps: 8000
+  max_rate_pps: 18000              # 12Mbps 配额硬顶
+  exclude_file: "config/exclude.txt"
+  retries: 1
+  ipv6_enabled: true
+
+ipv6_tga:
+  algorithm: "6tree"               # 6tree | entropyip
+  seed_sources:
+    - "https://ipv6hitlist.github.io"   # 种子下载入口（需手工/脚本拉取）
+  budget_per_round: 1000000        # 每轮探测预算
+  alias_probe_count: 3             # /96 别名前缀随机探针数（PAS）
+  feedback_epsilon: 0.1            # ε-greedy 探索比例
+
+l7:
+  engine: "auto"                   # auto | zgrab2 | python
+  protocols: ["http", "https", "tls", "ssh", "ftp", "smtp", "dns"]
+  ics_protocols: ["modbus", "bacnet", "dnp3", "s7"]   # 可选，默认关闭
+  body_limit_bytes: 65536          # Web 正文抓取上限（控制存储体量）
+  connect_timeout_ms: 3000
+  read_timeout_ms: 5000
+  concurrency: 512                 # python 兜底引擎并发
+
+enrichment:
+  geoip_enabled: true
+  asn_enabled: true
+  reverse_dns: true
+  rtt_measure: true
+
+classification:
+  taxonomy_file: "classification/taxonomy.json"
+  rules_dir: "classification/rules"
+  min_confidence: 0.55
+
+storage:
+  raw_shard_mb: 256
+  raw_retention_days: 30
+  parquet_compression: "zstd"
+  parquet_compression_level: 6
+  compact_interval_min: 30
+
+webui:
+  host: "127.0.0.1"
+  port_range: [8000, 9000]         # 启动时自动探测空闲端口
+  ws_push_interval_s: 1.0
+
+modules_autostart: ["l4_scanner", "l7_grabber", "storage_writer", "enricher", "classifier"]

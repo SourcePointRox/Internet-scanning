@@ -1,0 +1,27 @@
+# 运行时数据（不入库）
+data/raw/
+data/parquet/
+data/meta/
+data/seeds/
+data/geoip/
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 二进制（体积大，自行下载）
+bin/masscan.exe
+bin/zgrab2.exe
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 本地工作数据（非项目代码）
+.workbuddy/
+EVA论文批量/

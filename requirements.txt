@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn>=0.29
+PyYAML>=6.0
+zstandard>=0.22
+pyarrow>=15.0
+duckdb>=0.10
+geoip2>=4.8 ; platform_system != "Darwin"

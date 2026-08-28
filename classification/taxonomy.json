@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "based_on": "IAB Tech Lab Content Taxonomy 3.0 (主干) + NetAtlas 测绘扩展类目",
+  "taxonomy": {
+    "Technology & Computing": {
+      "Internet": {
+        "Data Distribution & File Storage": [
+          "Public FTP / File Repository",
+          "Scientific Data Mirror (e.g. ESA Gaia CDN)",
+          "CDN Edge Node",
+          "Open Directory (autoindex)",
+          "Software Distribution Mirror"
+        ],
+        "Web Services": ["Search Engine", "Portal", "API Endpoint"],
+        "Hosting & Infrastructure": ["Cloud / VPS Host", "Nameserver", "Mail Server"]
+      },
+      "Computing": ["Database Service", "DevOps & CI/CD", "Remote Access Service"]
+    },
+    "Science": {
+      "Astronomy & Space": ["Astronomical Dataset Distribution"],
+      "Research Infrastructure": ["Academic Mirror", "University Lab Service"]
+    },
+    "Business": {
+      "E-Commerce": ["Online Store", "Payment Gateway"],
+      "Enterprise": ["Corporate Site", "SaaS Application"]
+    },
+    "Media & Entertainment": {
+      "Streaming": ["Video Streaming", "Audio Streaming"],
+      "Publishing": ["News Site", "Blog / CMS"]
+    },
+    "Infrastructure (NetAtlas)": {
+      "Network Device": ["Router / Switch Admin", "Firewall / VPN Portal"],
+      "IoT & ICS (optional)": ["Modbus Device", "BACnet Device", "Siemens S7 PLC", "IP Camera", "Printer"],
+      "Default & Placeholder": ["Default Server Page", "Parked Domain", "Error / Captcha Page"]
+    },
+    "Unknown": ["Unclassified"]
+  }
+}
