@@ -69,14 +69,26 @@ class Enricher:
         self.bw = bandwidth
         self.geo = GeoResolver(cfg.abs_path("paths", "data_geoip"))
         self.reverse_dns = bool(cfg.get("enrichment", "reverse_dns", default=True))
+        # rDNS 为阻塞式系统调用（每条最长数秒），单线程消费会成为整条流水线的瓶颈；
+        # queue.Queue 线程安全，直接用消费线程池水平扩展（默认 16，可配）
+        self.threads_n = int(cfg.get("enrichment", "threads", default=16))
         self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._threads: list[threading.Thread] = []
+        if self.reverse_dns:
+            # gethostbyaddr 不支持超时参数，只能设进程级默认超时（一次性设置，
+            # 避免每次调用重复修改全局状态）
+            socket.setdefaulttimeout(3.0)
 
     def start(self) -> None:
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="enricher")
-        self._thread.start()
+        self._threads = [
+            threading.Thread(target=self._run, daemon=True, name=f"enricher-{i}")
+            for i in range(self.threads_n)
+        ]
+        for t in self._threads:
+            t.start()
         REGISTRY.set_running(MODULE, True)
+        REGISTRY.set_extra(MODULE, threads=self.threads_n)
 
     def stop(self) -> None:
         self._stop.set()
@@ -100,9 +112,8 @@ class Enricher:
             REGISTRY.incr(MODULE, "enriched")
 
     @staticmethod
-    def _rdns(ip: str, timeout: float = 3.0) -> str | None:
+    def _rdns(ip: str) -> str | None:
         try:
-            socket.setdefaulttimeout(timeout)
             return socket.gethostbyaddr(ip)[0]
         except Exception:  # noqa: BLE001
             return None

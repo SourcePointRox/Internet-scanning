@@ -112,7 +112,8 @@ def create_app(orch) -> FastAPI:
             return JSONResponse({"error": "仅允许 SELECT 查询"}, status_code=400)
         try:
             con = orch.catalog.duck()
-            rows = con.execute(normalized + " LIMIT 200").fetchall()
+            sql_final = normalized if " limit " in normalized.lower() else normalized + " LIMIT 200"
+            rows = con.execute(sql_final).fetchall()
             cols = [d[0] for d in con.description]
             return {"columns": cols, "rows": rows}
         except Exception as e:  # noqa: BLE001

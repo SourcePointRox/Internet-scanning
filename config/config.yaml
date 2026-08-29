@@ -32,6 +32,11 @@ l4:
   exclude_file: "config/exclude.txt"
   retries: 1
   ipv6_enabled: true
+  iface: null                      # 发包/抓包网卡名；null = 自动选取默认路由接口
+  cooldown_s: 10                   # 扫描结束后的收包冷却期
+  # 绕过 VPN 隧道直连物理网卡（关键：经 VPN 的 L3 探测会被伪造响应，结果不可用）
+  source_ip: "192.168.1.232"       # 物理网卡本地 IP；留空则自动选择
+  router_mac: "74:86:6f:af:9e:90"  # 网关 MAC（arp -a 192.168.1.1 获取）；留空则自动 ARP 解析
 
 ipv6_tga:
   algorithm: "6tree"               # 6tree | entropyip
@@ -63,6 +68,7 @@ classification:
 
 storage:
   raw_shard_mb: 256
+  flush_interval_s: 5            # 原始层刷盘间隔（秒），保证数据及时可读、异常退出不丢
   raw_retention_days: 30
   parquet_compression: "zstd"
   parquet_compression_level: 6

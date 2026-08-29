@@ -48,10 +48,12 @@ class ExcludeList:
 
 
 class L4Scanner:
-    def __init__(self, cfg: Config, out_queue: "queue.Queue[dict]", dry_run: bool = False):
+    def __init__(self, cfg: Config, out_queue: "queue.Queue[dict]", dry_run: bool = False,
+                 bandwidth=None):
         self.cfg = cfg
         self.out = out_queue
         self.dry_run = dry_run
+        self.bandwidth = bandwidth
         self._proc: subprocess.Popen | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -91,10 +93,16 @@ class L4Scanner:
         targets = targets or ["0.0.0.0/0"]
         ports = ports or self.cfg.get("l4", "phase1_ports")
         self._stop.clear()
+        # 每次启动重新探测后端，便于用户中途放入 masscan.exe 后热切换
+        self.masscan = self._find_masscan(self.cfg.abs_path("paths", "bin"))
+        if self.backend == "dry-run" and self.masscan and not self.dry_run:
+            log.info("检测到 masscan（%s），后端升级为 masscan", self.masscan)
+        self.backend = self._select_backend()
         REGISTRY.set_extra(MODULE, backend=self.backend)
         if self.backend == "scapy":
             from modules.l4_scapy import ScapyL4Scanner
-            self._scapy = ScapyL4Scanner(self.cfg, self.out, exclude=self.exclude)
+            self._scapy = ScapyL4Scanner(self.cfg, self.out, exclude=self.exclude,
+                                         bandwidth=self.bandwidth)
             self._scapy.start(targets=targets, ports=ports, rate_pps=self.rate_pps)
             REGISTRY.set_running(MODULE, True)
             return
@@ -120,6 +128,8 @@ class L4Scanner:
     def set_rate(self, pps: int) -> None:
         """运行中调速：masscan 不支持热调速，记录并在下次启动/续扫生效。"""
         self.rate_pps = max(100, min(pps, int(self.cfg.get("l4", "max_rate_pps", default=18000))))
+        if self._scapy is not None:
+            self._scapy.set_rate(self.rate_pps)
         REGISTRY.set_extra(MODULE, rate_pps=self.rate_pps)
 
     # ---------- 主循环 ----------
@@ -136,9 +146,16 @@ class L4Scanner:
             "-oJ", "-",                      # JSON 流输出到 stdout
             "--output-status", "open",
         ]
+        # 直连物理网卡（绕过会伪造响应的 VPN 隧道）
+        src_ip = self.cfg.get("l4", "source_ip")
+        router_mac = self.cfg.get("l4", "router_mac")
+        if src_ip:
+            cmd += ["--source-ip", str(src_ip)]
+        if router_mac:
+            cmd += ["--router-mac", str(router_mac)]
         if resume:
             cmd += ["--resume", resume]
-        log.info("启动 masscan: %s", " ".join(cmd[:6]) + " ...")
+        log.info("启动 masscan: %s", " ".join(cmd[:8]) + " ...")
         try:
             self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

@@ -90,7 +90,8 @@ class Catalog:
                 try:
                     con.execute(
                         f"CREATE OR REPLACE VIEW {tbl} AS "
-                        f"SELECT * FROM read_parquet('{pattern}', hive_partitioning=true)")
+                        f"SELECT * FROM read_parquet('{pattern}', "
+                        f"hive_partitioning=true, union_by_name=true)")
                 except Exception:  # noqa: BLE001
                     pass
         return con

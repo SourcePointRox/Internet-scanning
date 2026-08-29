@@ -53,7 +53,7 @@ class Orchestrator:
         self.class_q: queue.Queue[dict] = queue.Queue(maxsize=50_000)
 
         # ---- 模块 ----
-        self.l4 = L4Scanner(self.cfg, self.l4_q, dry_run=dry_run)
+        self.l4 = L4Scanner(self.cfg, self.l4_q, dry_run=dry_run, bandwidth=self.bandwidth)
         self.l7 = L7Grabber(self.cfg, self.l4_q, self.l7_q, bandwidth=self.bandwidth)
         self.enricher = Enricher(self.cfg, self.l7_q, self.enrich_q, bandwidth=self.bandwidth)
         self.classifier = Classifier(self.cfg, self.enrich_q, self.catalog, out_queue=self.class_q)

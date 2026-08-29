@@ -36,6 +36,17 @@ class ShardWriter:
         self._cur_size = 0
         self._cur_day = ""
         self._seq = 0
+        self._last_flush = time.monotonic()
+
+    def flush_if_due(self, interval_s: float) -> None:
+        """按时间刷盘：保证数据在 interval 秒内可读，避免进程异常退出丢数据。"""
+        if self._writer and time.monotonic() - self._last_flush >= interval_s:
+            try:
+                self._writer.flush()      # 结束当前 zstd 帧（文件可增量读取）
+                self._fh.flush()
+            except Exception:  # noqa: BLE001
+                pass
+            self._last_flush = time.monotonic()
 
     def _roll(self) -> None:
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -77,6 +88,7 @@ class StorageWriter:
         self.queues = queues
         self.base = cfg.abs_path("paths", "data_raw")
         self.shard_mb = int(cfg.get("storage", "raw_shard_mb", default=256))
+        self.flush_interval = float(cfg.get("storage", "flush_interval_s", default=5.0))
         self.writers: dict[str, ShardWriter] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -106,5 +118,9 @@ class StorageWriter:
                 if w is None:
                     w = self.writers[stream] = ShardWriter(self.base, stream, self.shard_mb)
                 w.write(rec)
+                w.flush_if_due(self.flush_interval)
             if idle:
+                # 空闲时立即刷盘，保证已采集数据可读
+                for w in self.writers.values():
+                    w.flush_if_due(0.0)
                 time.sleep(0.05)

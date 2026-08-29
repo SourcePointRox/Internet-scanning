@@ -194,7 +194,10 @@ class L7Grabber:
         def spawn(port: int, service: str) -> dict:
             module = ZGRAB2_MODULE.get(service, service)
             # --flush：每行结果立即刷新（管道模式下默认块缓冲，否则拿不到实时输出）
-            cmd = [self.zgrab2, module, "-p", str(port), "--flush"]
+            # --senders：限制每进程并发。默认 1000/进程 × 数十个进程会耗尽内存与端口，
+            #           32/进程 × ~40 进程 = ~1300 并发，对本项目吞吐（<50 目标/s）足够
+            senders = str(self.cfg.get("l7", "zgrab2_senders", default=32))
+            cmd = [self.zgrab2, "--senders", senders, module, "-p", str(port), "--flush"]
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                     errors="replace")
@@ -212,7 +215,14 @@ class L7Grabber:
             except queue.Empty:
                 continue
             port = int(hit["port"])
-            service = PORT_PROTOCOL.get(port, "http")
+            service = PORT_PROTOCOL.get(port)
+            if service is None:
+                # 无对应协议模块的端口（53/111/135/139/445/3389/5900/11211/1883 等）：
+                # 不发起 L7 握手，但保留 L4 存活事实（开放端口本身就是核心数据）
+                self.out_q.put({**hit, "protocol": "unknown", "l7_probed": False,
+                                "ts": int(time.time())})
+                REGISTRY.incr(MODULE, "skipped_no_module")
+                continue
             w = workers.get(port) or spawn(port, service)
             try:
                 w["proc"].stdin.write(f"{hit['ip']}\n")
