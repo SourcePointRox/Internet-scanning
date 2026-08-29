@@ -24,7 +24,7 @@ bandwidth:
     reserve: 3.0
 
 l4:
-  scanner: "masscan"               # masscan | zmap(linux only)
+  scanner: "auto"                  # auto | masscan（需 bin/masscan.exe+Npcap）| scapy（需 Npcap）
   phase1_ports: "21-23,25,53,80,110,111,135,139,143,443,445,465,587,993,995,1433,1521,1883,2375,3000,3306,3389,5432,5900,6379,7547,8000,8080,8443,8888,9000,9200,11211,27017,50070"
   phase2_ports: "0-65535"          # 仅对存活主机
   default_rate_pps: 8000

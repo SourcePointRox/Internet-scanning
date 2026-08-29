@@ -28,10 +28,20 @@ from orchestrator.state import REGISTRY
 log = logging.getLogger("netatlas.l7")
 MODULE = "l7_grabber"
 
+# 端口 -> 服务名（Python 引擎据此选择握手方式）
 PORT_PROTOCOL = {80: "http", 8080: "http", 8000: "http", 8888: "http",
                  443: "https", 8443: "https",
-                 22: "ssh", 21: "ftp", 25: "smtp", 587: "smtp",
-                 53: "dns", 110: "pop3", 143: "imap", 993: "tls", 995: "tls"}
+                 22: "ssh", 23: "telnet", 21: "ftp", 25: "smtp", 587: "smtp",
+                 110: "pop3", 143: "imap", 993: "tls", 995: "tls",
+                 3306: "mysql", 6379: "redis", 27017: "mongodb",
+                 5432: "postgres", 1433: "mssql", 123: "ntp"}
+
+# 服务名 -> zgrab2 模块名（v0.1.8 无 https 模块，HTTPS 改走 tls 模块抓取证书链）
+ZGRAB2_MODULE = {
+    "https": "tls", "pop3": "pop3", "imap": "imap", "mysql": "mysql",
+    "redis": "redis", "mongodb": "mongodb", "postgres": "postgres",
+    "mssql": "mssql", "ntp": "ntp", "telnet": "telnet",
+}
 
 
 class L7Grabber:
@@ -173,32 +183,52 @@ class L7Grabber:
 
     # ---------- ZGrab2 引擎 ----------
     def _run_zgrab2(self) -> None:
-        """流式驱动 zgrab2 multiple 模式。"""
-        proto_ports: dict[str, list[int]] = {}
-        for p, name in PORT_PROTOCOL.items():
-            proto_ports.setdefault(name, []).append(p)
-        ini = self.cfg.root / "config" / "zgrab2-multi.ini"
-        if not ini.exists():
-            log.warning("缺少 %s，zgrab2 引擎回退 python", ini)
-            self._run_python()
-            return
-        proc = subprocess.Popen([self.zgrab2, "multiple", "-c", str(ini)],
-                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                text=True, bufsize=1, errors="replace")
-        REGISTRY.set_extra(MODULE, engine="zgrab2", pid=proc.pid)
+        """按协议启动独立 zgrab2 进程（multiple 模式在部分版本不可用）。
 
-        def feeder():
-            while not self._stop.is_set():
-                try:
-                    hit = self.in_q.get(timeout=0.5)
-                except queue.Empty:
-                    continue
-                tag = PORT_PROTOCOL.get(hit["port"], "http")
-                proc.stdin.write(f"{hit['ip']},,{tag},{hit['port']}\n")
-                proc.stdin.flush()
+        每个 (端口 -> 协议模块) 组合对应一个常驻 zgrab2 进程：
+            zgrab2 <module> -p <port>       # 从 stdin 读 IP，向 stdout 输出 NDJSON
+        本线程负责分发目标并为每个进程起一个读取线程。
+        """
+        workers: dict[int, dict] = {}
 
-        ft = threading.Thread(target=feeder, daemon=True)
-        ft.start()
+        def spawn(port: int, service: str) -> dict:
+            module = ZGRAB2_MODULE.get(service, service)
+            # --flush：每行结果立即刷新（管道模式下默认块缓冲，否则拿不到实时输出）
+            cmd = [self.zgrab2, module, "-p", str(port), "--flush"]
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, bufsize=1,
+                                    errors="replace")
+            w = {"proc": proc, "module": module, "service": service}
+            workers[port] = w
+            threading.Thread(target=self._zgrab_reader, args=(proc, port, service),
+                             daemon=True, name=f"zgrab-{module}-{port}").start()
+            log.info("启动 zgrab2 进程: %s（端口 %d，pid=%s）", " ".join(cmd), port, proc.pid)
+            REGISTRY.set_extra(MODULE, **{f"proc_{module}_{port}": proc.pid})
+            return w
+
+        while not self._stop.is_set():
+            try:
+                hit = self.in_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            port = int(hit["port"])
+            service = PORT_PROTOCOL.get(port, "http")
+            w = workers.get(port) or spawn(port, service)
+            try:
+                w["proc"].stdin.write(f"{hit['ip']}\n")
+                w["proc"].stdin.flush()
+            except (BrokenPipeError, ValueError):
+                w = spawn(port, service)  # 进程异常退出则重启
+                w["proc"].stdin.write(f"{hit['ip']}\n")
+                w["proc"].stdin.flush()
+
+        for w in workers.values():
+            try:
+                w["proc"].terminate()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _zgrab_reader(self, proc: subprocess.Popen, port: int, service: str) -> None:
         assert proc.stdout is not None
         for line in proc.stdout:
             if self._stop.is_set():
@@ -210,6 +240,72 @@ class L7Grabber:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            self.out_q.put(rec)
-            REGISTRY.incr(MODULE, "grabbed")
-        proc.terminate()
+            try:
+                self.out_q.put(self._normalize_zgrab(rec, port, service))
+                REGISTRY.incr(MODULE, "grabbed")
+            except Exception:  # noqa: BLE001
+                REGISTRY.incr(MODULE, "normalize_errors")
+
+    @staticmethod
+    def _normalize_zgrab(rec: dict, port: int, service: str) -> dict:
+        """把 zgrab2 输出归一化为本项目 schema（供富化/分类模块消费）。
+
+        zgrab2 输出形如：{"ip": "...", "data": {"tls": {"status":..., "result": {...}}}}
+        归一化为：{"ip","port","protocol","ts","http":{...},"tls":{...},"zgrab_data":{...}}
+        """
+        import time
+        data = rec.get("data", {}) or {}
+        out = {"ip": rec.get("ip"), "port": port, "protocol": service,
+               "ts": int(time.time()), "engine": "zgrab2"}
+        mod = next(iter(data), None) if isinstance(data, dict) else None
+        if mod:
+            blk = data[mod] or {}
+            out["zgrab_status"] = blk.get("status")
+            result = blk.get("result", {}) or {}
+            if mod == "http":
+                resp = result.get("response", {}) or {}
+                out["http"] = {
+                    "status": resp.get("status_line", ""),
+                    "headers": resp.get("headers", {}) or {},
+                    "title": None,
+                    "body_len": len((resp.get("body") or "") if isinstance(resp.get("body"), str)
+                                    else str(resp.get("body") or "")),
+                }
+                out["body_sample"] = (resp.get("body") or "")[:4096] \
+                    if isinstance(resp.get("body"), str) else ""
+            elif mod == "tls":
+                hl = result.get("handshake_log", {}) or {}
+                certs = hl.get("server_certificates", {}) or {}
+                chain = certs.get("chain", []) or []
+                # zgrab2 v0.1.8 证书结构：chain[i].parsed.{subject_dn,issuer_dn,validity,...}
+                summary = []
+                for c in chain:
+                    parsed = (c or {}).get("parsed", {}) or {}
+                    subject = parsed.get("subject", {}) or {}
+                    issuer = parsed.get("issuer", {}) or {}
+                    validity = parsed.get("validity", {}) or {}
+                    exts = parsed.get("extensions", {}) or {}
+                    summary.append({
+                        "subject_dn": parsed.get("subject_dn"),
+                        "common_name": subject.get("common_name"),
+                        "issuer_dn": parsed.get("issuer_dn"),
+                        "issuer_cn": issuer.get("common_name"),
+                        "not_before": validity.get("start"),
+                        "not_after": validity.get("end"),
+                        "alt_names": exts.get("subject_alt_name", {}).get("dns_names")
+                        if isinstance(exts.get("subject_alt_name"), dict) else None,
+                        "key_algorithm": (parsed.get("subject_key_info", {}) or {}).get(
+                            "key_algorithm", {}).get("name")
+                        if isinstance(parsed.get("subject_key_info"), dict) else None,
+                    })
+                out["tls"] = {
+                    "server_hello": hl.get("server_hello", {}),
+                    "server_certificates": certs,
+                    "cert_summary": summary,
+                }
+            else:
+                out["banner"] = str(result)[:1024]
+            if blk.get("status") != "success":
+                out["error"] = str(blk.get("error"))[:200] if blk.get("error") else \
+                    f"zgrab status={blk.get('status')}"
+        return out

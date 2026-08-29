@@ -32,9 +32,30 @@ L7 协议握手抓取（banner / TLS 证书 / HTTP 指纹）、主机富化（BG
 ## 部署要求
 
 - Windows 10/11（存储与服务均按 Windows 路径开发）；
-- Python 3.13+；依赖：`pip install -r requirements.txt`；
-- **生产扫描**：`bin/masscan.exe`（masscan 官方 Windows 构建）+ **Npcap** 驱动（https://npcap.com）；
-- 可选：`bin/zgrab2.exe`（Go 交叉编译 `GOOS=windows go build ./cmd/zgrab2`）；GeoLite2 mmdb 放入 `data/geoip/`（MaxMind 许可需自行注册下载）；
+- Python 3.13+；依赖：`pip install -r requirements.txt`（含 `scapy`，用于 L4 原生扫描）；
+
+### L4 发包后端（三选一，启动时自动探测）
+
+| 后端 | 依赖 | 说明 |
+|---|---|---|
+| **masscan** | `bin/masscan.exe` + Npcap | 性能最佳。官方**无 Windows 预编译包**，需 MinGW + Npcap SDK 自行编译（源码已备于 `deps/`） |
+| **scapy**（默认可用） | Npcap + `pip install scapy` | 经 Npcap 的 `L3pcapSocket` 直接发包，绕过 Windows「禁止 raw socket 发送 TCP」的限制 |
+| **dry-run** | 无 | 模拟模式，用于流水线联调 |
+
+> **Npcap 是 Windows 下发包/抓包的基础**（masscan 与 scapy 都依赖它）：
+> 以管理员权限运行 `deps/npcap-1.88.exe` 完成驱动安装，
+> 用 `python scripts/check_npcap.py` 验证，再重启服务即可开始真实扫描。
+
+### L7 抓取引擎
+
+- **ZGrab2（Go，默认）**：已从官方源码编译为 `bin/zgrab2.exe`，支持 HTTP/TLS/SSH/FTP/SMTP/Telnet/MySQL/Redis/MongoDB/Postgres/MSSQL/NTP，以及工控协议 Modbus/BACnet/DNP3/Fox/Siemens。
+  重新编译：`go install github.com/zmap/zgrab2/cmd/zgrab2@v0.1.8`（**Go 1.22 可编译**；Go ≥1.24 会因上游 zcrypto 在 Windows 的兼容性问题失败）。
+  系统按端口自动派生 zgrab2 常驻进程，并把握手结果归一化（含 TLS 证书链摘要：CN/颁发者/有效期/密钥算法/SAN）。
+- **Python asyncio 引擎**：无 zgrab2 时自动降级，支持 HTTP/HTTPS/TLS/banner 与 RTT 测量。
+
+### 其他可选依赖
+
+- GeoLite2 mmdb 放入 `data/geoip/`（MaxMind 许可需自行注册下载），缺失时地理/ASN 富化优雅降级；
 - 编辑 `config/config.yaml`：替换 `project.contact_email` 为你的真实邮箱（opt-out 通道）。
 
 ## 快速开始

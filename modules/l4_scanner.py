@@ -59,6 +59,24 @@ class L4Scanner:
         bin_dir = cfg.abs_path("paths", "bin")
         self.masscan = self._find_masscan(bin_dir)
         self.exclude = ExcludeList(cfg.abs_path("l4", "exclude_file"))
+        # 后端：masscan（首选）/ scapy（Npcap 原生）/ dry-run（模拟）
+        self.backend = self._select_backend()
+        self._scapy = None
+
+    def _select_backend(self) -> str:
+        if self.dry_run:
+            return "dry-run"
+        pref = str(self.cfg.get("l4", "scanner", default="auto")).lower()
+        if pref == "masscan" or (pref == "auto" and self.masscan):
+            return "masscan"
+        if pref in ("scapy", "auto"):
+            from modules.l4_scapy import ScapyL4Scanner
+            ok, reason = ScapyL4Scanner.available()
+            if ok:
+                return "scapy"
+            log.warning("Scapy 后端不可用（%s）", reason)
+            REGISTRY.set_extra(MODULE, scapy_error=reason)
+        return "dry-run"
 
     @staticmethod
     def _find_masscan(bin_dir: Path) -> str | None:
@@ -70,9 +88,18 @@ class L4Scanner:
     # ---------- 生命周期 ----------
     def start(self, targets: list[str] | None = None, ports: str | None = None,
               resume: str | None = None) -> None:
+        targets = targets or ["0.0.0.0/0"]
+        ports = ports or self.cfg.get("l4", "phase1_ports")
         self._stop.clear()
+        REGISTRY.set_extra(MODULE, backend=self.backend)
+        if self.backend == "scapy":
+            from modules.l4_scapy import ScapyL4Scanner
+            self._scapy = ScapyL4Scanner(self.cfg, self.out, exclude=self.exclude)
+            self._scapy.start(targets=targets, ports=ports, rate_pps=self.rate_pps)
+            REGISTRY.set_running(MODULE, True)
+            return
         self._thread = threading.Thread(
-            target=self._run, args=(targets or ["0.0.0.0/0"], ports or self.cfg.get("l4", "phase1_ports"), resume),
+            target=self._run, args=(targets, ports, resume),
             daemon=True, name="l4-scanner",
         )
         self._thread.start()
@@ -80,6 +107,8 @@ class L4Scanner:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._scapy is not None:
+            self._scapy.stop()
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             try:
