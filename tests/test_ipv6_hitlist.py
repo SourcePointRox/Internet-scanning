@@ -9,6 +9,7 @@
 import ipaddress
 import random
 import sys
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -24,7 +25,7 @@ def synth_hitlist(n: int, rng: random.Random) -> list[str]:
     seeds = []
     for _ in range(n):
         pfx = rng.choice(hot_prefixes)
-        seeds.append(f"2001:db8:{pfx:x}::{rng.getrandbits(16):x}:{rng.getrandbits(32):x}")
+        seeds.append(f"2001:db8:{pfx:x}::{rng.getrandbits(16):x}:{rng.getrandbits(16):x}")
     return seeds
 
 
@@ -90,15 +91,12 @@ class TestTGAAgainstHitlist(unittest.TestCase):
 
     def test_hitlist_file_loading(self):
         """真实 hitlist 文件格式（每行地址，支持 CSV 首列、注释行）。"""
-        tmp = Path(__file__).resolve().parent / "tmp_hitlist.txt"
+        tmp = Path(tempfile.mkdtemp()) / "hitlist.txt"  # 写入临时目录，不落仓库
         tmp.write_text("# comment\n2001:db8::1\n2001:db8::2,extra-column\nbad-line\n\n",
                        encoding="utf-8")
-        try:
-            seeds = load_seeds(tmp)
-            self.assertEqual(len(seeds), 2)
-            self.assertIn("2001:db8::1", seeds)
-        finally:
-            tmp.unlink()
+        seeds = load_seeds(tmp)
+        self.assertEqual(len(seeds), 2)
+        self.assertIn("2001:db8::1", seeds)
 
 
 if __name__ == "__main__":

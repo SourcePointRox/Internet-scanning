@@ -143,10 +143,14 @@ class TestMasscanIntegration(L4TestBase):
                 break
             time.sleep(0.1)
         self.assertEqual(sm.snapshot()["state"], "PAUSED")
+        runs_before = len(self.read_argv_log())
         scanner.resume()
-        time.sleep(1.0)
+        # 轮询等待续扫进程启动（子进程启动耗时 ~1s，固定 sleep 会偶发失败）
+        deadline = time.time() + 15
+        while time.time() < deadline and len(self.read_argv_log()) <= runs_before:
+            time.sleep(0.2)
         scanner.stop()
-        self.assertGreaterEqual(len(self.read_argv_log()), 2, "续扫必须重启进程")
+        self.assertGreater(len(self.read_argv_log()), runs_before, "续扫必须重启进程")
 
     def test_set_rate_applied_on_segment_restart(self):
         scanner, sm = self.make_scanner("hang")
