@@ -153,6 +153,7 @@ def run_webui(orch) -> None:
     url = f"http://{host}:{port}"
     log.info("WebUI 已开放: %s", url)
     REGISTRY.set_extra("webui", url=url, port=port)
+    REGISTRY.set_running("webui", True)  # 前端控制面板需正确显示自身状态
     print(f"\n  NetAtlas WebUI → {url}\n")
 
     app = create_app(orch)
