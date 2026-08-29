@@ -161,6 +161,8 @@ class L4Scanner:
     def pause(self) -> None:
         """暂停扫描（保留进度，可 resume）。"""
         self._pause.set()
+        if self._scapy is not None:
+            self._scapy.stop()               # scapy 后端也要真正停发，否则暂停形同虚设
         self._terminate_proc()
         if self.scan_state:
             self.scan_state.transition("PAUSED")

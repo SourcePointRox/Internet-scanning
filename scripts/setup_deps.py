@@ -6,6 +6,7 @@
   python scripts/setup_deps.py --geoip KEY        # 用 MaxMind License Key 下载 GeoLite2 mmdb
   python scripts/setup_deps.py --npcap            # 检测/引导安装 Npcap（Windows）
   python scripts/setup_deps.py --masscan          # 检测 masscan（Windows 需 MinGW 编译，给指引）
+  python scripts/setup_deps.py --pyasn            # 安装 pyasn 并下载转换最新 BGP RIB（data/pyasn/rib.dat）
   python scripts/setup_deps.py --detect-net       # 探测本机网卡 IP / 网关 MAC（二层直连配置辅助）
 """
 from __future__ import annotations
@@ -139,6 +140,45 @@ def check_masscan() -> bool:
     return False
 
 
+def setup_pyasn() -> bool:
+    """安装 pyasn 并用其官方工具下载/转换最新 BGP RIB（IPv4）。"""
+    dat_dir = ROOT / "data" / "pyasn"
+    dat_dir.mkdir(parents=True, exist_ok=True)
+    dat = dat_dir / "rib.dat"
+    if dat.exists():
+        print(f"[pyasn] RIB 数据已存在: {dat} ✓")
+        return True
+    try:
+        import pyasn  # noqa: F401
+    except ImportError:
+        print("[pyasn] 安装 pyasn ...")
+        if subprocess.call([sys.executable, "-m", "pip", "install", "pyasn"]) != 0:
+            print("[pyasn] pip 安装失败")
+            return False
+    scripts_dir = Path(sys.executable).parent
+    dl = shutil.which("pyasn_util_download.py") or str(scripts_dir / "pyasn_util_download.py")
+    cv = shutil.which("pyasn_util_convert.py") or str(scripts_dir / "pyasn_util_convert.py")
+    if not (Path(dl).exists() and Path(cv).exists()):
+        print("[pyasn] 未找到 pyasn 工具脚本，请手工执行：")
+        print("  pyasn_util_download.py --latestv4 --filename rib.bz2")
+        print("  pyasn_util_convert.py --single rib.bz2 data/pyasn/rib.dat")
+        return False
+    bz2 = dat_dir / "rib.bz2"
+    print("[pyasn] 下载最新 RIB（RIPE RIS）...")
+    if subprocess.call([sys.executable, dl, "--latestv4", "--filename", str(bz2)],
+                       cwd=str(dat_dir)) != 0 or not bz2.exists():
+        print("[pyasn] RIB 下载失败（网络问题可稍后重试）")
+        return False
+    print("[pyasn] 转换 RIB -> rib.dat（约 1-2 分钟）...")
+    if subprocess.call([sys.executable, cv, "--single", str(bz2), str(dat)],
+                       cwd=str(dat_dir)) != 0 or not dat.exists():
+        print("[pyasn] RIB 转换失败")
+        return False
+    bz2.unlink(missing_ok=True)
+    print(f"[pyasn] 就绪: {dat} ✓（config: enrichment.pyasn.enabled=true 后生效）")
+    return True
+
+
 def detect_net() -> None:
     """探测二层直连所需的 source_ip / router_mac（辅助填写 config.yaml）。"""
     print("[detect-net] 本机网卡与网关信息：")
@@ -158,6 +198,7 @@ def main() -> None:
     ap.add_argument("--geoip", nargs="?", const="", default=None, help="MaxMind License Key")
     ap.add_argument("--npcap", action="store_true")
     ap.add_argument("--masscan", action="store_true")
+    ap.add_argument("--pyasn", action="store_true")
     ap.add_argument("--detect-net", action="store_true")
     args = ap.parse_args()
 
@@ -165,12 +206,14 @@ def main() -> None:
     if args.detect_net:
         detect_net()
         return
-    if args.all or not any([args.zgrab2, args.geoip is not None, args.npcap, args.masscan]):
+    if args.all or not any([args.zgrab2, args.geoip is not None, args.npcap,
+                            args.masscan, args.pyasn]):
         results["python"] = check_python_deps()
         results["npcap"] = check_npcap()
         results["masscan"] = check_masscan()
         results["zgrab2"] = setup_zgrab2()
         results["geoip"] = setup_geoip(None)
+        results["pyasn"] = setup_pyasn()
     else:
         if args.zgrab2:
             results["zgrab2"] = setup_zgrab2()
@@ -180,6 +223,8 @@ def main() -> None:
             results["npcap"] = check_npcap()
         if args.masscan:
             results["masscan"] = check_masscan()
+        if args.pyasn:
+            results["pyasn"] = setup_pyasn()
     failed = [k for k, v in results.items() if not v]
     print(f"\n== 汇总: {len(results) - len(failed)}/{len(results)} 就绪" +
           (f"，待处理: {', '.join(failed)}" if failed else " =="))

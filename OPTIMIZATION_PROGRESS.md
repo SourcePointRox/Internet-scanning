@@ -1,9 +1,26 @@
 # NetAtlas 优化进度交接文档
 
 > 用途：供下一个接手本仓库的模型/开发者快速了解「已完成的优化」「尚未完成的部分」「下一步该做什么」。
-> 最后更新：2026-08-30
-> 代码库路径：`D:\Internet-scanning-main`（仓库 `https://github.com/SourcePointRox/Internet-scanning.git`）
-> 当前状态：**已推送 GitHub，README 未改动；126 项测试全部通过**
+> 最后更新：2026-08-30（第二轮收尾）
+> 代码库路径：`C:\Users\wjk13\Documents\Internet-scanning-main`（仓库 `https://github.com/SourcePointRox/Internet-scanning.git`）
+> 当前状态：**全部遗留项已完成；147 项测试全部通过；README 已重写、CHANGELOG.md 已建立**
+
+## 第二轮收尾记录（2026-08-30，wjk13 机器）
+
+| 遗留项 | 结果 |
+|---|---|
+| README / CHANGELOG 重写 | ✅ README 全量重写（147 项测试、新架构、分布式、Docker、API 速览）；新增 CHANGELOG.md（详细） |
+| 端到端冒烟测试 | ✅ `tests/test_smoke_pipeline.py`（真实装配 Orchestrator→流水线→落盘校验） |
+| HTTP 分布式协调器 | ✅ `CoordinatorServer`（租约式分片认领）+ `HttpShardCoordinator` 客户端 + 8 项测试；修复认领表未按 shard_total 命名空间的 Bug |
+| IPv6 真实 hitlist 评估 | ✅ `scripts/eval_ipv6_hitlist.py`（训练/留出划分 + 随机基线，支持 .gz 下载） |
+| pyasn BGP 富化 | ✅ `BgpResolver`（enrichment.pyasn.enabled）+ `setup_deps.py --pyasn`；geoip/asn 开关真正接线 |
+| l4_scapy 进度持久化 | ✅ 热调速/开放端口/收尾进度落盘；`L4Scanner.pause()` 真正停发 scapy |
+| masscan 契约清单 | ✅ `docs/MASSCAN_CONTRACT.md`（5 节 17 条） |
+| 其他修复 | requirements.lock 补 httpx（新环境 TestClient 导入失败）；带宽默认配额 25→20（消除启动校验告警） |
+| 运行时冒烟 | ✅ `scripts/start.py --dry-run` 实跑：6 模块启动、WebUI :8000、265 探针→255 条记录落盘含血缘 |
+| 测试环境 | 新机器 venv：`C:\Users\wjk13\.workbuddy\binaries\python\envs\netatlas`（lock 装依赖需官方 PyPI；清华/阿里镜像缺精确版本） |
+
+---
 
 ---
 
@@ -11,17 +28,16 @@
 
 | 项目 | 状态 |
 |---|---|
-| 测试总数 | 126 项（原 13 项）→ `python -m unittest discover -s tests` 全绿 |
-| 测试耗时 | ~72 秒（含基准测试） |
-| 测试环境 | Python 3.13 venv：`C:\Users\huawei\.workbuddy\binaries\python\envs\netatlas` |
-| Git | 已 `git init`，`origin` = `https://github.com/SourcePointRox/Internet-scanning.git`，2 个本地提交（分支 `main`） |
-| 推送 | **待完成**：本机 Git Credential Manager 无交互式终端（`/dev/tty` 不可用），需提供 PAT 或授权 |
-| 待办 | 见文末「第 3 节 · 未完成项」 |
+| 测试总数 | **147 项**（原 13 项）→ `python -m unittest discover -s tests` 全绿 |
+| 测试耗时 | ~60 秒（含基准测试） |
+| 测试环境 | Python 3.13 venv：`C:\Users\wjk13\.workbuddy\binaries\python\envs\netatlas` |
+| Git | `origin` = `https://github.com/SourcePointRox/Internet-scanning.git`，分支 `main` |
+| 待办 | **无**（第 3 节全部清完，见文末第二轮收尾记录） |
 
 运行测试（务必用该 venv，系统 Python 未装依赖）：
 
 ```bash
-"C:/Users/huawei/.workbuddy/binaries/python/envs/netatlas/Scripts/python.exe" -m unittest discover -s tests
+"C:/Users/wjk13/.workbuddy/binaries/python/envs/netatlas/Scripts/python.exe" -m unittest discover -s tests
 ```
 
 ---

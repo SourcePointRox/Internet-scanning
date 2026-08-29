@@ -73,6 +73,7 @@ class ScapyL4Scanner:
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self._sent = 0
+        self._open = 0
 
     # ---------- 可用性自检 ----------
     @staticmethod
@@ -109,6 +110,8 @@ class ScapyL4Scanner:
     def set_rate(self, pps: int) -> None:
         self.rate_pps = max(10, min(pps, int(self.cfg.get("l4", "max_rate_pps", default=18000))))
         REGISTRY.set_extra(MODULE, rate_pps=self.rate_pps)
+        if self.scan_state:
+            self.scan_state.progress(rate_pps=self.rate_pps)  # 热调速同步落盘
 
     # ---------- 主流程 ----------
     @staticmethod
@@ -176,8 +179,12 @@ class ScapyL4Scanner:
                 sniffer.stop()
             except Exception as e:  # noqa: BLE001 —— 停止抓包失败不影响退出
                 log.debug("sniffer stop: %s", e)
-            if self.scan_state and self.scan_state.snapshot().get("state") == "RUNNING":
-                self.scan_state.transition("PAUSED" if self._stop.is_set() else "COMPLETED")
+            if self.scan_state:
+                # 收尾：最终进度落盘（probes_sent/open_found），再按状态机语义迁移
+                self.scan_state.progress(probes_sent=self._sent, open_found=self._open)
+                if self.scan_state.snapshot().get("state") == "RUNNING":
+                    self.scan_state.transition(
+                        "PAUSED" if self._stop.is_set() else "COMPLETED")
             REGISTRY.set_running(MODULE, False)
             log.info("Scapy 扫描停止，累计发包 %d", self._sent)
 
@@ -255,6 +262,9 @@ class ScapyL4Scanner:
                 "family": 6 if ":" in src else 4, "engine": "scapy",
             })
             REGISTRY.incr(MODULE, "open_ports")
+            self._open += 1
+            if self.scan_state and self._open % 64 == 0:  # 限频落盘，防每包刷盘
+                self.scan_state.progress(open_found=self._open)
         except Exception as e:  # noqa: BLE001 —— 单包解析失败计数，不打断收包循环
             REGISTRY.incr(MODULE, "packet_parse_errors")
             log.debug("响应包解析失败: %s", e)

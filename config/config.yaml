@@ -20,11 +20,11 @@ paths:
 bandwidth:
   upload_mbps: 25.0                  # 物理上行带宽
   global_cap_pct: 80                 # 全局令牌桶 = 上行 * 80%
-  quotas:                            # 各消费者配额（Mbps，总和应 <= 全局令牌桶）
-    l4_scan: 12.0
-    l7_grab: 8.0
+  quotas:                            # 各消费者配额（Mbps，总和应 <= 全局令牌桶 25×80%=20）
+    l4_scan: 10.0
+    l7_grab: 6.0
     dns_enrich: 2.0
-    reserve: 3.0
+    reserve: 2.0
 
 l4:
   scanner: "auto"                    # auto | masscan | scapy | dry-run
@@ -76,8 +76,11 @@ l7:
     backoff_ms: 300
 
 enrichment:
-  geoip_enabled: true
-  asn_enabled: true
+  geoip_enabled: true               # GeoLite2-City 地理富化开关
+  asn_enabled: true                 # GeoLite2-ASN 富化开关
+  pyasn:
+    enabled: false                  # pyasn 离线 BGP RIB 富化（origin ASN + 前缀）
+    dat_file: "data/pyasn/rib.dat"  # scripts/setup_deps.py --pyasn 可一键下载转换
   reverse_dns: true
   rtt_measure: true
   threads: 16                        # 传统线程池兜底并发（DNS 走异步引擎时不受限）
@@ -113,12 +116,14 @@ persistence:
   file: "data/meta/runtime_state.json"
   interval_s: 15
 
-# 分布式协同（预留接口，默认单机本地实现）
+# 分布式协同（默认单机本地实现；http 协调器可多机分片）
 distributed:
   enabled: false
-  coordinator: "local"               # local | http（预留：多机协调器）
+  coordinator: "local"               # local | http（多机协调器，python -m orchestrator.sharding --serve 启动）
+  coordinator_url: ""                # http 协调器地址，如 http://10.0.0.1:8765
+  heartbeat_interval_s: 15           # 节点心跳/分片续租周期（租约 45s，见 sharding.DEFAULT_LEASE_TTL_S）
   node_id: ""                        # 空 = 自动生成 hostname-pid
   shard_total: 1                     # 全网任务分片总数
-  shard_index: 0                     # 本节点负责的分片序号
+  shard_index: 0                     # 期望的分片序号（http 模式下为首选值，以协调器实际分配为准）
 
 modules_autostart: ["l4_scanner", "l7_grabber", "storage_writer", "enricher", "classifier"]
