@@ -202,8 +202,12 @@ git log --oneline
 git branch       # main（已 git branch -M main）
 ```
 
-- 两个提交均**尚未推送**（`git push` 因缺少凭据失败：本机 GCM 需要 `/dev/tty` 交互式提示，而该环境无 TTY）。
-- 推送方式（任选）：
+- 三个提交均**尚未推送**（`git push` 因缺少凭据失败）。
+- **已尝试的授权方式（均失败，勿重复浪费时间）**：
+  1. HTTPS + Git Credential Manager → `bash: /dev/tty: No such device or address`，无法弹出交互式登录框；
+  2. `git-credential-manager github login` → 无输出、未落凭据，随后 push 依旧失败（浏览器 OAuth 回调无法在当前环境完成）；
+  3. SSH 推送 → `~/.ssh` 不存在，`ssh -T git@github.com` 返回 `Permission denied (publickey)`。
+- 推送方式（任选其一，需要用户侧凭据）：
   1. 提供 Personal Access Token（需 `repo` 权限）：
      ```bash
      git remote set-url origin https://<TOKEN>@github.com/SourcePointRox/Internet-scanning.git
