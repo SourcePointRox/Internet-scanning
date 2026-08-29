@@ -1,0 +1,17 @@
+# 运行时产物
+data/
+logs/
+*.log
+__pycache__/
+*.pyc
+.venv/
+.workbuddy/
+
+# 外部二进制与数据（由 scripts/setup_deps.py 安装）
+bin/
+deps/
+*.mmdb
+
+# 本地实例配置（模板 config.example.yaml 入库；本地 config.yaml 可保留个人值）
+# 若团队希望统一配置可注释下一行
+# config/config.yaml

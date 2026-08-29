@@ -1,0 +1,31 @@
+# NetAtlas docker-compose：单机一键部署
+# 用法：
+#   docker compose up -d                 # dry-run 模拟模式（安全默认）
+#   docker compose run --rm netatlas --targets 203.0.113.0/29   # 生产扫描（需先阅读 docs/RESPONSIBLE_SCANNING.md）
+#
+# 注意：真实发包需要 raw socket 能力，已配置 NET_RAW/NET_ADMIN。
+services:
+  netatlas:
+    build: .
+    image: netatlas:latest
+    container_name: netatlas
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host          # 扫描器需要直接操作宿主机网络栈
+    environment:
+      # 机器相关配置全部经环境变量注入（勿写入镜像）
+      NETATLAS_CONTACT_EMAIL: ${NETATLAS_CONTACT_EMAIL:-netatlas-research@example.org}
+      NETATLAS_BANDWIDTH__UPLOAD_MBPS: ${NETATLAS_UPLOAD_MBPS:-25}
+      NETATLAS_L4__SOURCE_IP: ${NETATLAS_SOURCE_IP:-}
+      NETATLAS_L4__ROUTER_MAC: ${NETATLAS_ROUTER_MAC:-}
+      NETATLAS_WEBUI__HOST: 0.0.0.0
+    volumes:
+      - netatlas-data:/app/data        # 扫描数据持久化（raw/parquet/meta/seeds/geoip）
+      - netatlas-logs:/app/logs
+    # command 覆盖示例：["--targets", "203.0.113.0/29"]
+
+volumes:
+  netatlas-data:
+  netatlas-logs:

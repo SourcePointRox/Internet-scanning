@@ -1,0 +1,12 @@
+.git
+.workbuddy
+data/
+logs/
+bin/
+deps/
+__pycache__/
+*.pyc
+.venv/
+tests/
+docker-compose.yml
+Dockerfile

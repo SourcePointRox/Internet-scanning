@@ -1,0 +1,124 @@
+# NetAtlas 全局配置（本地实例）
+# 本文件由 config.example.yaml 复制而来，不入库机器相关信息。
+# 所有键均可被环境变量覆盖：NETATLAS_<段>__<键>（双下划线分层），
+# 例如 NETATLAS_L4__SOURCE_IP=10.0.0.5、NETATLAS_BANDWIDTH__UPLOAD_MBPS=50。
+project:
+  name: NetAtlas
+  contact_email: "${NETATLAS_CONTACT_EMAIL:netatlas-research@example.org}"   # 必填：opt-out 联系邮箱
+  user_agent: "NetAtlas/1.0 (academic internet measurement; contact: ${NETATLAS_CONTACT_EMAIL:netatlas-research@example.org})"
+
+paths:
+  root: ""                           # 空 = 自动取仓库根目录（可移植）；也可 NETATLAS_PATHS__ROOT 覆盖
+  bin: "bin"                         # masscan / zgrab2 存放目录
+  data_raw: "data/raw"               # 原始层：zstd NDJSON 分片
+  data_parquet: "data/parquet"       # 列式层：Parquet 分区表
+  data_meta: "data/meta"             # SQLite 元数据/状态库
+  data_geoip: "data/geoip"           # GeoLite2 mmdb（scripts/setup_deps.py 可自动下载）
+  seeds: "data/seeds"                # IPv6 hitlist 种子缓存
+  logs: "logs"
+
+bandwidth:
+  upload_mbps: 25.0                  # 物理上行带宽
+  global_cap_pct: 80                 # 全局令牌桶 = 上行 * 80%
+  quotas:                            # 各消费者配额（Mbps，总和应 <= 全局令牌桶）
+    l4_scan: 12.0
+    l7_grab: 8.0
+    dns_enrich: 2.0
+    reserve: 3.0
+
+l4:
+  scanner: "auto"                    # auto | masscan | scapy | dry-run
+  phase1_ports: "21-23,25,53,80,110,111,135,139,143,443,445,465,587,993,995,1433,1521,1883,2375,3000,3306,3389,5432,5900,6379,7547,8000,8080,8443,8888,9000,9200,11211,27017,50070"
+  phase2_ports: "0-65535"            # 仅对存活主机
+  default_rate_pps: 8000
+  max_rate_pps: 18000                # 12Mbps 配额硬顶
+  exclude_file: "config/exclude.txt"
+  retries: 1
+  ipv6_enabled: true
+  iface: null                        # 发包网卡名；null = 自动选取默认路由接口
+  cooldown_s: 10                     # 扫描结束后的收包冷却期
+  # 二层直连物理网卡（绕过 VPN 隧道）。两者必须同时配置或同时留空。
+  # 留空 = 自动探测（推荐）；手动指定时可用 scripts/setup_deps.py --detect-net 辅助获取。
+  source_ip: ""                      # 物理网卡本地 IP；空 = 自动选择
+  router_mac: ""                     # 网关 MAC；空 = 自动 ARP 解析
+  # 动态调速（AIMD 反馈控制）
+  rate_adapt:
+    enabled: true                    # 根据丢包/网卡利用率自动升降速
+    interval_s: 10                   # 调速决策周期
+    up_step_pct: 10                  # 无丢包时每个周期 +10%
+    down_factor: 0.5                 # 丢包超阈值时乘以 0.5（乘性减）
+    loss_high_pct: 5.0               # 丢包率高水位（响应/探测比低于 95% 视为拥塞）
+  # 断点续扫
+  resume:
+    enabled: true
+    state_file: "data/meta/scan_state.json"   # 扫描进度状态机持久化文件
+    segment_minutes: 10              # masscan 不支持热调速：按时间段分片，片间以新速率 --resume 重启
+
+ipv6_tga:
+  algorithm: "6tree"                 # 6tree | entropyip
+  seed_sources:
+    - "https://ipv6hitlist.github.io"
+  budget_per_round: 1000000
+  alias_probe_count: 3
+  feedback_epsilon: 0.1
+
+l7:
+  engine: "auto"                     # auto | zgrab2 | python
+  protocols: ["http", "https", "tls", "ssh", "ftp", "smtp", "dns"]
+  ics_protocols: ["modbus", "bacnet", "dnp3", "s7"]   # 可选，默认关闭
+  body_limit_bytes: 65536
+  connect_timeout_ms: 3000
+  read_timeout_ms: 5000
+  concurrency: 512                   # python 兜底引擎并发
+  zgrab2_senders: 32                 # 每个 zgrab2 常驻进程的并发握手数
+  retry:
+    max_attempts: 2                  # 瞬时错误（超时/重置）重试次数
+    backoff_ms: 300
+
+enrichment:
+  geoip_enabled: true
+  asn_enabled: true
+  reverse_dns: true
+  rtt_measure: true
+  threads: 16                        # 传统线程池兜底并发（DNS 走异步引擎时不受限）
+  dns:
+    engine: "auto"                   # auto | async（内置纯 Python 异步解析器）| threads
+    concurrency: 256                 # 异步解析器在途查询上限
+    timeout_ms: 2500
+    nameservers: []                  # 空 = 系统默认（Windows 读注册表 / Linux 读 resolv.conf）
+
+classification:
+  taxonomy_file: "classification/taxonomy.json"
+  rules_dir: "classification/rules"
+  min_confidence: 0.55
+
+storage:
+  raw_shard_mb: 256
+  flush_interval_s: 5
+  raw_retention_days: 30
+  parquet_compression: "zstd"
+  parquet_compression_level: 6
+  compact_interval_min: 30
+  schema_version: 2                  # 存储记录 schema 版本（演进见 storage/schema.py）
+  disk_min_free_mb: 512              # 磁盘剩余低于此值：写入器暂停并告警（防写满）
+
+webui:
+  host: "127.0.0.1"
+  port_range: [8000, 9000]
+  ws_push_interval_s: 1.0
+
+# 状态持久化：REGISTRY 计数与扫描状态定期落盘，进程重启后恢复
+persistence:
+  enabled: true
+  file: "data/meta/runtime_state.json"
+  interval_s: 15
+
+# 分布式协同（预留接口，默认单机本地实现）
+distributed:
+  enabled: false
+  coordinator: "local"               # local | http（预留：多机协调器）
+  node_id: ""                        # 空 = 自动生成 hostname-pid
+  shard_total: 1                     # 全网任务分片总数
+  shard_index: 0                     # 本节点负责的分片序号
+
+modules_autostart: ["l4_scanner", "l7_grabber", "storage_writer", "enricher", "classifier"]

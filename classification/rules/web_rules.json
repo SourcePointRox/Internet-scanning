@@ -1,0 +1,104 @@
+[
+  {
+    "id": "open-directory",
+    "category": ["Technology & Computing", "Internet", "Data Distribution & File Storage", "Open Directory (autoindex)"],
+    "weight": 0.95,
+    "signals": [
+      {"field": "http.title", "regex": "(?i)index of /"},
+      {"field": "body_sample", "regex": "(?i)(parent directory|directory listing for)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "scientific-data-mirror",
+    "category": ["Science", "Astronomy & Space", "Astronomical Dataset Distribution"],
+    "weight": 0.9,
+    "signals": [
+      {"field": "domain", "regex": "(?i)(esa\\.int|esac|nasa\\.gov|noao|sdss|gaia|heasarc)"},
+      {"field": "http.title", "regex": "(?i)(data release|dataset|archive)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "ftp-repository",
+    "category": ["Technology & Computing", "Internet", "Data Distribution & File Storage", "Public FTP / File Repository"],
+    "weight": 0.9,
+    "signals": [
+      {"field": "protocol", "eq": "ftp"},
+      {"field": "banner", "regex": "(?i)^220.*ftp"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "cdn-edge",
+    "category": ["Technology & Computing", "Internet", "Data Distribution & File Storage", "CDN Edge Node"],
+    "weight": 0.85,
+    "signals": [
+      {"field": "http.headers.server", "regex": "(?i)(cloudflare|akamai|fastly|cloudfront|cdn77|cachefly)"},
+      {"field": "http.headers", "regex_key": "(?i)^(x-cache|cf-ray|x-amz-cf-id|x-fastly-request-id)$"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "nginx-generic",
+    "category": ["Technology & Computing", "Internet", "Web Services", "Portal"],
+    "weight": 0.4,
+    "signals": [{"field": "http.headers.server", "regex": "(?i)nginx"}],
+    "match": "any"
+  },
+  {
+    "id": "default-page",
+    "category": ["Infrastructure (NetAtlas)", "Default & Placeholder", "Default Server Page"],
+    "weight": 0.8,
+    "signals": [
+      {"field": "http.title", "regex": "(?i)(welcome to nginx|apache2 .* default page|iis windows server|test page)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "wordpress-cms",
+    "category": ["Media & Entertainment", "Publishing", "Blog / CMS"],
+    "weight": 0.85,
+    "signals": [
+      {"field": "body_sample", "regex": "(?i)(wp-content|wp-includes|wordpress)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "router-admin",
+    "category": ["Infrastructure (NetAtlas)", "Network Device", "Router / Switch Admin"],
+    "weight": 0.9,
+    "signals": [
+      {"field": "http.title", "regex": "(?i)(router|mikrotik|tp-link|openwrt|dd-wrt|asuswrt)"},
+      {"field": "http.headers.www-authenticate", "regex": "(?i)(router|gateway)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "ip-camera",
+    "category": ["Infrastructure (NetAtlas)", "IoT & ICS (optional)", "IP Camera"],
+    "weight": 0.9,
+    "signals": [
+      {"field": "http.title", "regex": "(?i)(ipcamera|ip camera|hikvision|dahua|webcam)"},
+      {"field": "banner", "regex": "(?i)(hikvision|dahua)"}
+    ],
+    "match": "any"
+  },
+  {
+    "id": "modbus-device",
+    "category": ["Infrastructure (NetAtlas)", "IoT & ICS (optional)", "Modbus Device"],
+    "weight": 0.95,
+    "signals": [{"field": "port", "eq_int": 502}],
+    "match": "any"
+  },
+  {
+    "id": "database-service",
+    "category": ["Technology & Computing", "Computing", "Database Service"],
+    "weight": 0.85,
+    "signals": [
+      {"field": "port", "eq_int_any": [3306, 5432, 1433, 1521, 27017, 6379, 9200]},
+      {"field": "banner", "regex": "(?i)(mysql|postgresql|mongodb|redis|elastic)"}
+    ],
+    "match": "any"
+  }
+]

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetAtlas · 互联网扫描管控台</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --card:#161b22; --border:#2b333d; --border2:#3d4754;
+    --text:#e6edf3; --muted:#8b949e; --dim:#6e7681;
+    --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --danger:#f85149; --purple:#bc8cff; --teal:#39c5cf;
+    --mono:"Cascadia Code",Consolas,"JetBrains Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
+  header h1{font-size:16px;font-weight:600;letter-spacing:.3px}
+  header h1 .sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  .badge{font-size:11px;padding:2px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+  .badge.on{background:rgba(63,185,80,.15);color:var(--ok);border-color:rgba(63,185,80,.4)}
+  .badge.warn{background:rgba(210,153,34,.15);color:var(--warn);border-color:rgba(210,153,34,.4)}
+  #ws-status{font-size:11px;color:var(--muted);margin-left:auto;font-family:var(--mono)}
+  main{max-width:1560px;margin:14px auto;padding:0 14px;display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;min-width:0}
+  .card h2{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .card h2 .right{margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0;font-family:var(--mono);font-size:11px}
+  .span3{grid-column:span 3}.span4{grid-column:span 4}.span5{grid-column:span 5}.span6{grid-column:span 6}
+  .span7{grid-column:span 7}.span8{grid-column:span 8}.span9{grid-column:span 9}.span12{grid-column:span 12}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .kpi .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .kpi .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .kpi .d{font-size:10px;color:var(--dim);font-family:var(--mono)}
+  /* 通用 */
+  .row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .row:last-child{border-bottom:none}
+  .row .name{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block;flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 6px rgba(63,185,80,.6)}
+  .btn{border:1px solid var(--border2);background:var(--bg2);color:var(--text);border-radius:6px;padding:3px 12px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:rgba(88,166,255,.15);border-color:rgba(88,166,255,.5);color:var(--accent)}
+  .btn.danger{color:var(--danger);border-color:rgba(248,81,73,.4)}
+  .btn.sm{padding:1px 8px;font-size:11px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  input[type=range]{accent-color:var(--accent)}
+  .slider-val{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px;text-align:right;font-family:var(--mono);font-size:12px}
+  .path{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:4px 8px;word-break:break-all;margin-top:3px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:11px;white-space:nowrap}
+  td{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  canvas{width:100%;display:block}
+  .chip{display:inline-block;color:#fff;border-radius:8px;padding:1px 8px;font-size:10px;white-space:nowrap;font-family:"Segoe UI",sans-serif}
+  .bar-track{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;flex:1}
+  .bar-fill{height:100%;border-radius:3px;transition:width .5s}
+  .quota-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+  .quota-grid label{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .feed-box{height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;background:var(--bg)}
+  .feed-box thead{position:sticky;top:0;background:var(--bg2);z-index:1}
+  .err-box{height:170px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:6px 8px;font-family:var(--mono);font-size:11px;line-height:1.7}
+  .err-box .e-err{color:var(--danger)} .err-box .e-warn{color:var(--warn)}
+  .err-box .meta{color:var(--dim)}
+  select,input[type=text]{background:var(--bg);border:1px solid var(--border2);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px}
+  .statline{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+  .statline b{color:var(--text)}
+  @media(max-width:1100px){.span3,.span4,.span5,.span6,.span7,.span8,.span9{grid-column:span 12}.kpis{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>NetAtlas<span class="sub">全球互联网扫描与资产测绘</span></h1>
+  <span id="mode-badge" class="badge">--</span>
+  <span id="engine-badge" class="badge">--</span>
+  <span id="node-badge" class="badge">--</span>
+  <span id="ws-status">连接中…</span>
+</header>
+<main>
+  <!-- KPI 指标带 -->
+  <div class="span12 kpis" id="kpis"></div>
+
+  <!-- 全局控制 -->
+  <div class="card span12">
+    <h2>全局控制<span class="right" id="global-info"></span></h2>
+    <div class="toolbar">
+      <button class="btn primary" onclick="pipeline('start')">▶ 启动流水线</button>
+      <button class="btn danger" onclick="pipeline('stop')">■ 停止流水线</button>
+      <span style="width:16px"></span>
+      <label>上行带宽</label>
+      <input type="range" id="bw-upload" min="1" max="100" step="1" style="width:150px" oninput="bwChange()">
+      <span class="slider-val" id="bw-upload-val">25 Mbps</span>
+      <label>全局占用</label>
+      <input type="range" id="bw-cap" min="5" max="100" step="5" style="width:110px" oninput="bwChange()">
+      <span class="slider-val" id="bw-cap-val">80%</span>
+    </div>
+  </div>
+
+  <!-- 实时吞吐 -->
+  <div class="card span8">
+    <h2>实时吞吐<span class="right" id="tp-legend"></span></h2>
+    <canvas id="tp-chart" width="900" height="170"></canvas>
+  </div>
+
+  <!-- 队列深度 -->
+  <div class="card span4">
+    <h2>队列背压<span class="right" id="queue-total"></span></h2>
+    <div id="queues"></div>
+  </div>
+
+  <!-- 扫描控制 -->
+  <div class="card span6">
+    <h2>扫描控制 · 断点续扫状态机<span class="right" id="scan-state-badge"></span></h2>
+    <div class="toolbar" style="margin-bottom:8px">
+      <button class="btn" id="btn-pause" onclick="scanCtl('pause')">⏸ 暂停（可续扫）</button>
+      <button class="btn primary" id="btn-resume" onclick="scanCtl('resume')">⏵ 续扫</button>
+      <span style="flex:1"></span>
+      <label>速率</label>
+      <input type="range" id="rate-slider" min="100" max="18000" step="100" style="width:160px"
+             oninput="$('#rate-val').textContent=(+this.value).toLocaleString()+' pps'">
+      <span class="slider-val" id="rate-val">8,000 pps</span>
+      <button class="btn primary sm" onclick="applyRate()">下发</button>
+    </div>
+    <div id="scan-detail" class="statline"></div>
+    <canvas id="rate-chart" width="700" height="70" style="margin-top:8px"></canvas>
+  </div>
+
+  <!-- 模块控制 -->
+  <div class="card span6">
+    <h2>模块启停 · 计数 · 最近错误</h2>
+    <div id="modules"></div>
+  </div>
+
+  <!-- 实时信息流 -->
+  <div class="card span12">
+    <h2>实时扫描信息流
+      <span class="right">
+        <input type="text" id="feed-filter" placeholder="过滤 IP/域名/标题…" style="width:180px" oninput="renderFeed()">
+        <select id="feed-cat" onchange="renderFeed()"><option value="">全部分类</option></select>
+        <label style="margin-left:8px"><input type="checkbox" id="feed-autoscroll" checked> 自动滚动</label>
+      </span>
+    </h2>
+    <div class="feed-box" id="feed-box">
+      <table id="feed-table">
+        <thead><tr>
+          <th style="width:70px">时间</th><th style="width:150px">IP:端口</th><th style="width:60px">协议</th>
+          <th style="width:170px">域名/反解</th><th style="width:150px">分类</th><th style="width:70px">RTT</th><th>标题 / Server</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 带宽配额 -->
+  <div class="card span4">
+    <h2>模块带宽配额 (Mbps)</h2>
+    <div class="quota-grid" id="quotas"></div>
+  </div>
+
+  <!-- 分类统计 -->
+  <div class="card span4">
+    <h2>站点分类 TOP<span class="right" id="class-total"></span></h2>
+    <div style="max-height:220px;overflow-y:auto">
+      <table id="class-table"><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 存储层 -->
+  <div class="card span4">
+    <h2>存储层 · 本地路径</h2>
+    <div id="storage"></div>
+  </div>
+
+  <!-- 错误事件 -->
+  <div class="card span12">
+    <h2>错误与告警事件<span class="right" id="err-counts"></span></h2>
+    <div class="err-box" id="errors"></div>
+  </div>
+
+  <!-- 只读查询 -->
+  <div class="card span12">
+    <h2>即席查询（DuckDB · 只读 SELECT · Parquet 列式层）</h2>
+    <div class="toolbar">
+      <input type="text" id="sql" style="flex:1;font-family:var(--mono)"
+             placeholder='SELECT * FROM hosts LIMIT 10' value="SELECT * FROM hosts LIMIT 10">
+      <button class="btn primary" onclick="runQuery()">执行</button>
+    </div>
+    <div id="query-result" style="margin-top:8px;overflow-x:auto"></div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s??'').toString().replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => (n??0).toLocaleString();
+const COLORS = {up:'#58a6ff', down:'#3fb950', rate:'#d29922'};
+const CAT_COLORS = ['#58a6ff','#3fb950','#d29922','#bc8cff','#39c5cf','#f85149','#f778ba','#ffa657'];
+function catColor(cat){ let h=0; for(const c of cat) h=(h*31+c.charCodeAt(0))>>>0; return CAT_COLORS[h%CAT_COLORS.length]; }
+
+/* ---------- 状态 ---------- */
+const series = {up: [], down: []};
+const rateHist = [];
+const MAX_POINTS = 150;
+let feedData = [];          // 全量信息流缓存（前端过滤）
+const FEED_MAX = 500;
+let lastDashboard = null;
+
+/* ---------- WebSocket ---------- */
+let ws;
+function connectWs(){
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => $('#ws-status').textContent = '● LIVE';
+  ws.onmessage = ev => { const d = JSON.parse(ev.data); lastDashboard = d; renderLive(d); };
+  ws.onclose = () => { $('#ws-status').textContent = '○ 断开重连中'; setTimeout(connectWs, 2000); };
+}
+
+/* ---------- 实时渲染 ---------- */
+function renderLive(d){
+  const nic = d.nic || {};
+  series.up.push(nic.up_mbps||0); if(series.up.length>MAX_POINTS) series.up.shift();
+  series.down.push(nic.down_mbps||0); if(series.down.length>MAX_POINTS) series.down.shift();
+  const rate = d.scan?.rate?.rate_pps;
+  if(rate!=null){ rateHist.push(rate); if(rateHist.length>MAX_POINTS) rateHist.shift(); }
+  drawChart(); drawRateChart();
+  $('#tp-legend').innerHTML =
+    `<span style="color:${COLORS.up}">■</span> 上行 ${(nic.up_mbps||0).toFixed(2)} Mbps &nbsp; `+
+    `<span style="color:${COLORS.down}">■</span> 下行 ${(nic.down_mbps||0).toFixed(2)} Mbps`;
+  renderKpis(d);
+  renderQueues(d.queues||{});
+  renderModules(d.modules||{});
+  renderScan(d.scan||{});
+  if(d.feed && d.feed.length){ feedData.push(...d.feed); if(feedData.length>FEED_MAX) feedData = feedData.slice(-FEED_MAX); renderFeed(); }
+  renderErrors(d);
+  // 带宽控件初始化一次
+  const bw = d.bandwidth||{};
+  if(!$('#quotas').dataset.init && bw.quotas_mbps){
+    $('#quotas').dataset.init = 1;
+    $('#quotas').innerHTML = Object.entries(bw.quotas_mbps).map(([k,v]) => `
+      <div><label>${k}</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="range" min="0.5" max="20" step="0.5" value="${v}" style="flex:1"
+                 oninput="quotaChange('${k}',this.value);this.nextElementSibling.textContent=this.value">
+          <span class="slider-val" style="min-width:36px">${v}</span></div></div>`).join('');
+    $('#bw-upload').value = bw.upload_mbps; $('#bw-upload-val').textContent = bw.upload_mbps+' Mbps';
+    $('#bw-cap').value = bw.cap_pct; $('#bw-cap-val').textContent = bw.cap_pct+'%';
+  }
+}
+
+function renderKpis(d){
+  const m = d.modules||{};
+  const c = k => (m.l4_scanner?.counters?.[k])||0;
+  const g = (mod,k) => (m[mod]?.counters?.[k])||0;
+  const bw = d.bandwidth||{};
+  const kpis = [
+    ['开放端口', c('open_ports'), `排除 ${fmt(c('excluded'))}`],
+    ['L7 抓取', g('l7_grabber','grabbed'), `错误 ${fmt(g('l7_grabber','errors'))} · 跳过 ${fmt(g('l7_grabber','skipped_no_module'))}`],
+    ['富化', g('enricher','enriched'), `rDNS 命中 ${fmt(g('enricher','rdns_ok'))}`],
+    ['分类', g('classifier','classified'), `错误 ${fmt(g('classifier','errors'))}`],
+    ['落盘记录', g('storage_writer','hosts_records'), `${(g('storage_writer','bytes_written')/1e6).toFixed(1)} MB`],
+    ['Parquet', g('compactor','parquet_files'), `错误 ${fmt(g('compactor','compact_errors'))}`],
+    ['上行占用', (bw.throughput ? Object.values(bw.throughput).reduce((a,b)=>a+b,0).toFixed(1) : '0')+' M', `上限 ${bw.global_cap_mbps||0} Mbps`],
+    ['错误事件', Object.values(d.errors_recent||{}).reduce((a,b)=>a+b,0), '全模块累计'],
+  ];
+  $('#kpis').innerHTML = kpis.map(([l,v,dd]) =>
+    `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="d">${dd}</div></div>`).join('');
+}
+
+function renderQueues(q){
+  const caps = {l4_q:100000, l7_q:50000, enrich_q:50000, class_q:50000};
+  let total = 0;
+  $('#queues').innerHTML = Object.entries(q).map(([k,v]) => {
+    total += v;
+    const pct = Math.min(100, v/(caps[k]||50000)*100);
+    const color = pct>80?'var(--danger)':pct>50?'var(--warn)':'var(--ok)';
+    return `<div class="row"><span class="name">${k}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <span class="slider-val">${fmt(v)}</span></div>`;
+  }).join('');
+  $('#queue-total').textContent = `合计 ${fmt(total)}`;
+}
+
+function renderModules(mods){
+  $('#modules').innerHTML = Object.entries(mods).map(([name,m]) => {
+    const counters = Object.entries(m.counters||{}).slice(0,4).map(([k,v])=>`${k}:${fmt(v)}`).join(' ');
+    const extra = Object.entries(m.extra||{}).filter(([k])=>['backend','engine','dns_engine','rate_pps','progress_pct'].includes(k))
+      .map(([k,v])=>`${k}=${v}`).join(' ');
+    return `<div class="row">
+      <span class="dot ${m.running?'on':''}"></span><span class="name" title="${name}">${name}</span>
+      <span style="color:var(--dim);font-size:11px;font-family:var(--mono)">${m.running?m.uptime_s+'s':'停止'} ${extra} ${counters}</span>
+      ${m.last_error?`<span style="color:var(--danger);font-size:11px" title="${esc(m.last_error)}">⚠</span>`:''}
+      ${m.running?`<button class="btn danger sm" onclick="mod('${name}','stop')">停止</button>`
+                 :`<button class="btn sm" onclick="mod('${name}','start')">启动</button>`}
+    </div>`;
+  }).join('');
+}
+
+function renderScan(scan){
+  const st = scan.scan_state||{};
+  const rate = scan.rate||{};
+  const stateColor = {RUNNING:'var(--ok)',PAUSED:'var(--warn)',FAILED:'var(--danger)',COMPLETED:'var(--accent)',IDLE:'var(--dim)'}[st.state]||'var(--dim)';
+  $('#scan-state-badge').innerHTML = st.state?`<span style="color:${stateColor}">● ${st.state}</span> 分片 ${st.segment??0}`:'未启用';
+  $('#btn-pause').disabled = st.state!=='RUNNING';
+  $('#btn-resume').disabled = !(st.state==='PAUSED'||st.state==='FAILED');
+  if(rate.rate_pps && document.activeElement!==$('#rate-slider')){
+    $('#rate-slider').value = rate.rate_pps;
+    $('#rate-val').textContent = fmt(rate.rate_pps)+' pps';
+  }
+  $('#scan-detail').innerHTML = [
+    st.run_id?`run <b>${st.run_id}</b>`:'',
+    `探针 <b>${fmt(st.probes_sent)}</b>`, `命中 <b>${fmt(st.open_found)}</b>`,
+    st.targets?.length?`目标 <b>${esc(st.targets.join(' ').slice(0,40))}</b>`:'',
+    rate.last_decision?`调速 <b>${rate.last_decision}</b>`:'',
+    scan.shard?`分片 <b>${scan.shard.index}/${scan.shard.total}</b> (${scan.shard.coordinator})`:'',
+    st.last_error?`<span style="color:var(--danger)">${esc(st.last_error)}</span>`:'',
+  ].filter(Boolean).join(' ');
+}
+
+/* ---------- 信息流（前端过滤） ---------- */
+function renderFeed(){
+  const f = ($('#feed-filter').value||'').toLowerCase();
+  const cat = $('#feed-cat').value;
+  const items = feedData.filter(e => {
+    if(cat && e.category!==cat) return false;
+    if(f && !((e.ip||'').includes(f)||(e.domain||'').toLowerCase().includes(f)||(e.title||'').toLowerCase().includes(f))) return false;
+    return true;
+  }).slice(-200);
+  // 分类下拉去重
+  const cats = [...new Set(feedData.map(e=>e.category).filter(Boolean))];
+  const sel = $('#feed-cat');
+  if(sel.options.length-1 !== cats.length){
+    sel.innerHTML = '<option value="">全部分类</option>'+cats.map(c=>`<option ${c===cat?'selected':''}>${esc(c)}</option>`).join('');
+  }
+  $('#feed-table tbody').innerHTML = items.map(e => {
+    const t = new Date(e.ts*1000).toLocaleTimeString('zh-CN',{hour12:false});
+    const c = e.category||'Unknown';
+    return `<tr>
+      <td style="color:var(--dim)">${t}</td>
+      <td>${esc(e.ip)}:${e.port??''}</td>
+      <td>${esc(e.protocol||'')}</td>
+      <td title="${esc(e.domain||'')}">${esc(e.domain||'')}</td>
+      <td title="${esc(e.category_path||'')}"><span class="chip" style="background:${catColor(c)}">${esc(c)}</span></td>
+      <td style="color:var(--dim)">${e.rtt_ms?e.rtt_ms+'ms':''}</td>
+      <td style="color:var(--muted)" title="${esc(e.title||'')}">${esc(e.title||'')}</td>
+    </tr>`;
+  }).join('');
+  if($('#feed-autoscroll').checked){ const box=$('#feed-box'); box.scrollTop = box.scrollHeight; }
+}
+
+/* ---------- 错误事件 ---------- */
+function renderErrors(d){
+  const counts = d.errors_recent||{};
+  $('#err-counts').textContent = Object.entries(counts).map(([k,v])=>`${k}:${v}`).join(' · ');
+}
+async function refreshErrors(){
+  try{
+    const r = await api('/api/errors?n=60');
+    const items = (r.in_memory||[]).slice().reverse();
+    $('#errors').innerHTML = items.map(e => {
+      const t = new Date(e.ts*1000).toLocaleTimeString('zh-CN',{hour12:false});
+      const cls = e.level==='warning'?'e-warn':'e-err';
+      return `<div><span class="meta">${t} [${esc(e.module)}]</span> <span class="${cls}">${esc(e.message)}</span>${e.exception?` <span class="meta">${esc(e.exception)}</span>`:''}</div>`;
+    }).join('') || '<div class="meta">暂无错误事件</div>';
+  }catch(e){}
+}
+
+/* ---------- 图表 ---------- */
+function drawChart(){
+  const c = $('#tp-chart'), ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  const max = Math.max(1, ...series.up, ...series.down)*1.2;
+  ctx.strokeStyle = '#2b333d';
+  for(let i=1;i<4;i++){ ctx.beginPath(); ctx.moveTo(0,c.height*i/4); ctx.lineTo(c.width,c.height*i/4); ctx.stroke(); }
+  ctx.fillStyle = '#6e7681'; ctx.font = '10px sans-serif';
+  for(let i=1;i<4;i++){ ctx.fillText((max*(4-i)/4).toFixed(1)+'M', 4, c.height*i/4-3); }
+  Object.entries(series).forEach(([k,arr]) => {
+    ctx.strokeStyle = COLORS[k]; ctx.lineWidth = 1.5; ctx.beginPath();
+    arr.forEach((v,i)=>{ const x=i/(MAX_POINTS-1)*c.width, y=c.height-(v/max)*c.height; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+    // 面积渐变
+    ctx.lineTo(c.width,c.height); ctx.lineTo(0,c.height); ctx.closePath();
+    ctx.fillStyle = COLORS[k]+'18'; ctx.fill();
+  });
+}
+function drawRateChart(){
+  const c = $('#rate-chart'), ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  if(rateHist.length<2) return;
+  const max = Math.max(...rateHist)*1.15, min = Math.min(...rateHist)*0.85;
+  ctx.strokeStyle = COLORS.rate; ctx.lineWidth = 1.5; ctx.beginPath();
+  rateHist.forEach((v,i)=>{ const x=i/(MAX_POINTS-1)*c.width, y=c.height-((v-min)/Math.max(1,max-min))*c.height; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+  ctx.fillStyle = '#6e7681'; ctx.font = '10px sans-serif';
+  ctx.fillText(`速率 ${fmt(rateHist[rateHist.length-1])} pps（AIMD 分片调速）`, 4, 11);
+}
+
+/* ---------- API ---------- */
+async function api(path, method='GET', body){
+  const r = await fetch(path, {method, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined});
+  return r.json();
+}
+function mod(name, action){ api(`/api/modules/${name}/${action}`,'POST'); }
+function pipeline(action){ api(`/api/pipeline/${action}`,'POST'); }
+function scanCtl(action){ api(`/api/scan/${action}`,'POST'); }
+function applyRate(){ api('/api/scan/rate','POST',{rate_pps:+$('#rate-slider').value}); }
+function bwChange(){
+  $('#bw-upload-val').textContent = $('#bw-upload').value+' Mbps';
+  $('#bw-cap-val').textContent = $('#bw-cap').value+'%';
+  api('/api/bandwidth','POST',{upload_mbps:+$('#bw-upload').value, cap_pct:+$('#bw-cap').value});
+}
+function quotaChange(k,v){ api('/api/bandwidth','POST',{quotas:{[k]:+v}}); }
+
+async function refreshStatic(){
+  const st = await api('/api/status');
+  $('#mode-badge').textContent = st.dry_run ? 'DRY-RUN 模拟' : '生产扫描';
+  $('#mode-badge').className = 'badge ' + (st.dry_run ? 'warn' : 'on');
+  $('#engine-badge').textContent = 'L7: '+st.engine_l7 + ' · L4: ' + (st.modules?.l4_scanner?.extra?.backend||'-');
+  $('#node-badge').textContent = '节点 ' + (st.node?.id||'-').slice(0,20);
+  $('#global-info').textContent = `令牌桶 ${st.bandwidth?.global_cap_mbps??'-'} Mbps`;
+  $('#storage').innerHTML = Object.entries(st.storage||{}).map(([k,v]) => `
+    <div style="margin-bottom:8px;font-size:12px"><b>${k}</b> · ${v.size_mb} MB · ${v.files} 文件
+      <div class="path">${v.path}</div></div>`).join('');
+  const cs = await api('/api/classification/stats');
+  const rows = cs.top_categories||[];
+  $('#class-total').textContent = rows.reduce((a,[,n])=>a+n,0)+' 站点';
+  $('#class-table tbody').innerHTML = rows.map(([c,n]) =>
+    `<tr><td><span class="chip" style="background:${catColor(c)}">${esc(c)}</span></td>
+     <td style="text-align:right">${n}</td></tr>`).join('') || '<tr><td style="color:var(--dim)">暂无分类数据</td></tr>';
+}
+
+async function runQuery(){
+  const r = await api('/api/query?sql='+encodeURIComponent($('#sql').value));
+  if(r.error){ $('#query-result').innerHTML = `<div class="path" style="color:var(--danger)">${esc(r.error)}</div>`; return; }
+  $('#query-result').innerHTML = '<table><thead><tr>'+r.columns.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr></thead><tbody>'+
+    r.rows.map(row=>'<tr>'+row.map(v=>`<td title="${esc(v)}">${esc((v??'').toString().slice(0,100))}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
+}
+
+async function initFeed(){
+  const r = await api('/api/feed?n=100');
+  if(r.items && r.items.length){ feedData = r.items; renderFeed(); }
+}
+
+connectWs();
+refreshStatic();
+initFeed();
+refreshErrors();
+setInterval(refreshStatic, 5000);
+setInterval(refreshErrors, 5000);
+</script>
+</body>
+</html>
