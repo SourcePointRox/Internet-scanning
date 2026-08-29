@@ -170,6 +170,63 @@ Internet-scanning/
 | `GET /api/classification/stats` `/api/query?sql=...` | 分类统计 / 只读 SQL（DuckDB） |
 | `WS /ws` | 实时推送（status/feed/scan/node/errors_recent 帧） |
 
+## 更新日志
+
+完整逐条记录见 [CHANGELOG.md](CHANGELOG.md)。以下是主要版本变更摘要。
+
+### [2.0.0] — 2026-08-30「基础设施重构与可靠性加固」
+
+测试从 13 项扩充至 **147 项**，重构过程中由新测试发现并修复 9 个真实代码 Bug。
+
+**新增**
+
+- **测试体系（13 → 147 项）**：14 个测试文件，覆盖配置 / 错误处理 / 持久化 / 分片 /
+  异步 DNS / L4-L7 集成 / 存储全链路 / WebUI 端到端 / 故障恢复 / 基准 / 端到端冒烟；
+  `tests/fake_masscan.py` 测试替身（quick/hang/crash/resume-crash 四模式）；
+- **可靠性与状态管理**：`orchestrator/errors.py`（重试装饰器 + `ErrorReporter` 错误总线，
+  SQLite 持久化）、`persistence.py`（`StateStore` 快照落盘 + `ScanStateMachine` 断点续扫，
+  崩溃后 RUNNING→PAUSED 降级）、`ratecontrol.py`（AIMD 动态调速）；L4 主循环改为分片式
+  （片间以新速率 `--resume` 重启 masscan）+ 进程看门狗；
+- **并发与 DNS**：`concurrency.py`（统一并发抽象 + 子进程看门狗）、
+  `modules/dns_async.py`（纯 Python 异步 DNS，绕 GIL，RFC 1035 报文级实现）；
+- **分布式**：`sharding.py` —— `HashedSharder` 一致性哈希分片（/24、/48 无状态复算）+
+  **HTTP 协调器**（`CoordinatorServer` 租约式分片认领 + `HttpShardCoordinator` 客户端，
+  心跳续租、宕机自动释放、不可达降级）；
+- **存储与血缘**：`storage/schema.py`（Schema v2 + `_lineage` 血缘盖章 + v1→v2 迁移 +
+  类型化列）；compactor 类型化 Parquet + 清单持久化；
+- **富化**：pyasn 离线 BGP RIB（`bgp` 字段）；异步 DNS 引擎默认启用；
+- **配置与依赖**：环境变量插值/覆盖/启动校验、`config.example.yaml`、
+  `requirements.lock` 精确锁定、`scripts/setup_deps.py` 一键安装外部依赖、
+  `scripts/eval_ipv6_hitlist.py` 离线评估、`Dockerfile`/`docker-compose.yml`；
+- **WebUI**：深色高密度仪表盘全量重写 + 5 个新 API（progress/rate/pause/resume/errors）。
+
+**变更**
+
+- 消除全部 `except Exception: pass`（改为 ErrorReporter 上报 + 计数 + 具体异常捕获）；
+- `config/config.yaml` 去除机器相关硬编码；带宽默认配额修正为 20 Mbps；
+- `enrich.py` 改用统一并发抽象；`main.py` 装配全部新基础设施。
+
+**修复（由新测试发现的真实 Bug）**
+
+| Bug | 修复 |
+|---|---|
+| HTTP 正文丢失（read 早返回） | `_read_to_eof()` 循环读到 EOF/限量 |
+| 状态机不接受 str 路径 | 构造时统一 `Path()` |
+| 进程退出竞态丢记录 | 等待 sentinel 排空管道 |
+| zstd 缓冲掩盖写失败 | flush 失败上报 |
+| masscan 段终止误判崩溃 | `_terminated_by_us` 标记区分主动终止 |
+| DuckDB 视图注册静默失败 | 告警 + 表名校验 |
+| idna 编码异常 | DNS 名称容错编码 |
+| HTTP 协调器分片认领串任务 | 认领键按 `{shard_total}:{index}` 命名空间隔离 |
+
+### [1.0.0] — 初始版本
+
+IPv4 两阶段无状态扫描、IPv6 TGA（6Tree/EntropyIP）、L7 抓取（ZGrab2 + Python 兜底）、
+GeoIP/rDNS 富化、IAB 分类、三层存储（NDJSON.zst → Parquet → DuckDB/SQLite）、
+WebUI 基础版、13 项单元测试。
+
+---
+
 ## 合规与安全
 
 - `config/exclude.txt` 强制加载：IANA 保留段、RFC1918、组播、opt-out 网段；
