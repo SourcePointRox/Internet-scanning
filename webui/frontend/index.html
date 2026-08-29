@@ -67,7 +67,7 @@
 
   <!-- 实时吞吐 -->
   <div class="card span8">
-    <h2>实时吞吐 (Mbps · 5s 窗口)</h2>
+    <h2>实时吞吐 · 网卡级真实计量 (Mbps · 5s 窗口)</h2>
     <canvas id="tp-chart" width="800" height="160"></canvas>
     <div id="tp-legend" style="display:flex;gap:18px;font-size:12px;color:var(--muted);margin-top:6px"></div>
   </div>
@@ -76,6 +76,19 @@
   <div class="card span4">
     <h2>流水线队列深度（背压监控）</h2>
     <div id="queues"></div>
+  </div>
+
+  <!-- 实时扫描信息流 -->
+  <div class="card span12">
+    <h2>实时扫描信息流（含分类 · 最新在下 · 自动滚动）</h2>
+    <div id="feed-box" style="height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+      <table id="feed-table" style="font-size:12px">
+        <thead style="position:sticky;top:0;background:var(--card)"><tr>
+          <th>时间</th><th>IP:端口</th><th>协议</th><th>域名/反解</th><th>分类（悬停看完整层级）</th><th>标题 / Server</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- 模块控制 -->
@@ -116,9 +129,12 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const series = {}; // consumer -> [mbps...]
+const series = {up: [], down: []}; // 网卡级真实上/下行 Mbps
 const MAX_POINTS = 120;
-const COLORS = {l4_scan:'#2b6cb0', l7_grab:'#2f9e44', dns_enrich:'#e8590c', reserve:'#868e96'};
+const COLORS = {up:'#2b6cb0', down:'#2f9e44'};
+const CAT_COLORS = ['#2b6cb0','#2f9e44','#e8590c','#9c36b5','#0c8599','#e03131'];
+function catColor(cat){ let h=0; for(const c of cat) h=(h*31+c.charCodeAt(0))>>>0; return CAT_COLORS[h%CAT_COLORS.length]; }
+const esc = s => (s??'').toString().replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 let ws;
 function connectWs(){
@@ -129,12 +145,16 @@ function connectWs(){
 }
 
 function renderLive(d){
-  // 吞吐序列
-  const tp = d.bandwidth.throughput || {};
-  Object.keys(COLORS).forEach(k => { series[k] = series[k] || []; series[k].push(tp[k]||0); if(series[k].length>MAX_POINTS) series[k].shift(); });
+  // 网卡级真实吞吐序列
+  const nic = d.nic || {};
+  series.up.push(nic.up_mbps||0); if(series.up.length>MAX_POINTS) series.up.shift();
+  series.down.push(nic.down_mbps||0); if(series.down.length>MAX_POINTS) series.down.shift();
   drawChart();
-  $('#tp-legend').innerHTML = Object.keys(COLORS).map(k =>
-    `<span><span style="color:${COLORS[k]}">■</span> ${k}: ${(tp[k]||0).toFixed(2)} Mbps</span>`).join('');
+  $('#tp-legend').innerHTML =
+    `<span><span style="color:${COLORS.up}">■</span> 上行: ${(nic.up_mbps||0).toFixed(2)} Mbps</span>`+
+    `<span><span style="color:${COLORS.down}">■</span> 下行: ${(nic.down_mbps||0).toFixed(2)} Mbps</span>`;
+  // 实时信息流（增量追加，自动滚动）
+  if(d.feed && d.feed.length) appendFeed(d.feed);
   // 队列
   $('#queues').innerHTML = Object.entries(d.queues||{}).map(([k,v]) =>
     `<div class="row"><span class="name">${k}</span><span class="slider-val">${v.toLocaleString()}</span></div>`).join('');
@@ -162,13 +182,38 @@ function renderLive(d){
   }
 }
 
+const FEED_MAX = 300;
+function appendFeed(items){
+  const tbody = $('#feed-table tbody');
+  const html = items.map(e => {
+    const t = new Date(e.ts*1000).toLocaleTimeString('zh-CN', {hour12:false});
+    const cat = e.category || 'Unknown';
+    const chip = `<span style="color:#fff;background:${catColor(cat)};border-radius:8px;padding:1px 8px;font-size:11px;white-space:nowrap">${esc(cat)}</span>`;
+    return `<tr>
+      <td style="color:var(--muted);white-space:nowrap">${t}</td>
+      <td style="font-family:Consolas,monospace;white-space:nowrap">${esc(e.ip)}:${e.port??''}</td>
+      <td>${esc(e.protocol||'')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.domain||'')}</td>
+      <td title="${esc(e.category_path||'')}" style="cursor:help">${chip}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${esc(e.title||'')}</td>
+    </tr>`;
+  }).join('');
+  tbody.insertAdjacentHTML('beforeend', html);
+  while(tbody.rows.length > FEED_MAX) tbody.deleteRow(0);
+  const box = $('#feed-box');
+  box.scrollTop = box.scrollHeight;  // 自动滚动到最新
+}
+
 function drawChart(){
   const c = $('#tp-chart'), ctx = c.getContext('2d');
   ctx.clearRect(0,0,c.width,c.height);
-  const all = Object.values(series).flat();
+  const all = [...series.up, ...series.down];
   const max = Math.max(1, ...all) * 1.2;
   ctx.strokeStyle = '#e3e8ef';
   for(let i=1;i<4;i++){ ctx.beginPath(); ctx.moveTo(0,c.height*i/4); ctx.lineTo(c.width,c.height*i/4); ctx.stroke(); }
+  // 纵轴刻度
+  ctx.fillStyle = '#6b7686'; ctx.font = '10px sans-serif';
+  for(let i=1;i<4;i++){ ctx.fillText((max*(4-i)/4).toFixed(1)+'M', 4, c.height*i/4 - 3); }
   Object.entries(series).forEach(([k,arr]) => {
     ctx.strokeStyle = COLORS[k]||'#333'; ctx.lineWidth = 1.6; ctx.beginPath();
     arr.forEach((v,i)=>{ const x=i/(MAX_POINTS-1)*c.width, y=c.height-(v/max)*c.height; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
@@ -209,8 +254,15 @@ async function runQuery(){
     r.rows.map(row=>'<tr>'+row.map(v=>`<td>${(v??'').toString().slice(0,120)}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
 }
 
+async function initFeed(){
+  // 页面打开时先拉取最近 50 条历史，之后由 WebSocket 增量推送
+  const r = await api('/api/feed?n=50');
+  if(r.items && r.items.length) appendFeed(r.items);
+}
+
 connectWs();
 refreshStatic();
+initFeed();
 setInterval(refreshStatic, 5000);
 </script>
 </body>

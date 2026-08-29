@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.bandwidth import BandwidthController
 from orchestrator.config import load
+from orchestrator.nicmon import NicMonitor
 from orchestrator.state import REGISTRY
 from modules.l4_scanner import L4Scanner
 from modules.l7_grabber import L7Grabber
@@ -45,6 +46,10 @@ class Orchestrator:
             quotas_mbps=dict(bw_cfg.get("quotas", {})) or None or {
                 "l4_scan": 12.0, "l7_grab": 8.0, "dns_enrich": 2.0, "reserve": 3.0})
         self.catalog = Catalog(self.cfg)
+
+        # ---- 网卡级真实吞吐监控（外部进程流量不经过令牌桶，曲线数据源）----
+        self.nic = NicMonitor()
+        self.nic.start()
 
         # ---- 队列（有界，天然背压） ----
         self.l4_q: queue.Queue[dict] = queue.Queue(maxsize=100_000)

@@ -29,9 +29,12 @@ log = logging.getLogger("netatlas.l7")
 MODULE = "l7_grabber"
 
 # 端口 -> 服务名（Python 引擎据此选择握手方式）
+# 第二段为常见 HTTP 协议端口（7547 TR-069 / 9200 ES / 2375 Docker / 50070 Hadoop 等）
 PORT_PROTOCOL = {80: "http", 8080: "http", 8000: "http", 8888: "http",
+                 3000: "http", 9000: "http", 9200: "http",
+                 7547: "http", 2375: "http", 50070: "http",
                  443: "https", 8443: "https",
-                 22: "ssh", 23: "telnet", 21: "ftp", 25: "smtp", 587: "smtp",
+                 22: "ssh", 23: "telnet", 21: "ftp", 25: "smtp", 465: "smtp", 587: "smtp",
                  110: "pop3", 143: "imap", 993: "tls", 995: "tls",
                  3306: "mysql", 6379: "redis", 27017: "mongodb",
                  5432: "postgres", 1433: "mssql", 123: "ntp"}

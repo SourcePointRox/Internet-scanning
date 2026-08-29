@@ -51,6 +51,7 @@ def create_app(orch) -> FastAPI:
         return {
             "modules": REGISTRY.snapshot(),
             "bandwidth": orch.bandwidth.snapshot(),
+            "nic": orch.nic.rates(),
             "storage": orch.catalog.storage_overview(),
             "queues": {
                 "l4_q": orch.l4_q.qsize(), "l7_q": orch.l7_q.qsize(),
@@ -59,6 +60,12 @@ def create_app(orch) -> FastAPI:
             "dry_run": orch.dry_run,
             "engine_l7": orch.l7.engine,
         }
+
+    # ---------------- 实时信息流 ----------------
+    @app.get("/api/feed")
+    def feed(n: int = 50):
+        from orchestrator import livefeed
+        return {"items": livefeed.latest(min(n, 200))}
 
     # ---------------- 带宽控制 ----------------
     @app.get("/api/bandwidth")
@@ -122,12 +129,19 @@ def create_app(orch) -> FastAPI:
     # ---------------- WebSocket 实时推送 ----------------
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
+        from orchestrator import livefeed
         await websocket.accept()
         interval = float(orch.cfg.get("webui", "ws_push_interval_s", default=1.0))
+        last_seq = 0  # 信息流增量游标：只推新条目，前端追加渲染
         try:
             while True:
+                new_items = livefeed.since(last_seq)
+                if new_items:
+                    last_seq = new_items[-1]["seq"]
                 payload = {
                     "bandwidth": orch.bandwidth.snapshot(),
+                    "nic": orch.nic.rates(),
+                    "feed": new_items,
                     "modules": REGISTRY.snapshot(),
                     "queues": {"l4_q": orch.l4_q.qsize(), "l7_q": orch.l7_q.qsize(),
                                "enrich_q": orch.enrich_q.qsize(), "class_q": orch.class_q.qsize()},

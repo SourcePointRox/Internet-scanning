@@ -18,6 +18,7 @@ from pathlib import Path
 
 from orchestrator.config import Config
 from orchestrator.state import REGISTRY
+from orchestrator import livefeed
 from storage.catalog import Catalog
 
 log = logging.getLogger("netatlas.classifier")
@@ -132,8 +133,35 @@ class Classifier:
                                          "signals": signals}
                 if self.out_q is not None:
                     self.out_q.put(rec)
+                self._push_feed(rec, path, conf)
                 REGISTRY.incr(MODULE, "classified")
                 REGISTRY.incr(MODULE, f"cat::{path[-1]}")
             except Exception as e:  # noqa: BLE001
                 REGISTRY.incr(MODULE, "errors")
                 log.debug("分类失败: %s", e)
+
+    @staticmethod
+    def _push_feed(rec: dict, path: list[str], conf: float) -> None:
+        """把分类结果摘要推入实时信息流（WebUI 滚动展示）。"""
+        http = rec.get("http") or {}
+        title = http.get("title")
+        if not title:
+            m = re.search(r"<title[^>]*>(.*?)</title>", rec.get("body_sample", "") or "",
+                          re.I | re.S)
+            title = m.group(1).strip()[:120] if m else None
+        if not title:
+            headers = http.get("headers") or {}
+            server = headers.get("server") if isinstance(headers, dict) else None
+            if isinstance(server, list):
+                server = "; ".join(str(s) for s in server[:2])
+            title = server
+        livefeed.push({
+            "ip": rec.get("ip"), "port": rec.get("port"),
+            "protocol": rec.get("protocol"),
+            "domain": rec.get("domain") or rec.get("reverse_dns"),
+            "category": path[-1],
+            "category_path": " > ".join(path),
+            "confidence": round(conf, 2),
+            "title": (title or "")[:120] or None,
+            "rtt_ms": rec.get("rtt_ms"),
+        })
