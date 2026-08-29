@@ -14,6 +14,8 @@
 | 测试总数 | 126 项（原 13 项）→ `python -m unittest discover -s tests` 全绿 |
 | 测试耗时 | ~72 秒（含基准测试） |
 | 测试环境 | Python 3.13 venv：`C:\Users\huawei\.workbuddy\binaries\python\envs\netatlas` |
+| Git | 已 `git init`，`origin` = `https://github.com/SourcePointRox/Internet-scanning.git`，2 个本地提交（分支 `main`） |
+| 推送 | **待完成**：本机 Git Credential Manager 无交互式终端（`/dev/tty` 不可用），需提供 PAT 或授权 |
 | 待办 | 见文末「第 3 节 · 未完成项」 |
 
 运行测试（务必用该 venv，系统 Python 未装依赖）：
@@ -57,7 +59,9 @@
 - `requirements.txt`：加上下界约束（`<1.0` 等）；
 - **新增 `requirements.lock`**：全部依赖精确锁定（fastapi 0.141.1 / pyarrow 25.0.1 / duckdb 1.5.5 等）；
 - **新增 `scripts/setup_deps.py`**：一键检测/安装外部依赖（`--all`、`--zgrab2`（Go 可自动编译）、`--geoip <KEY>`（MaxMind 自动下载解压）、`--npcap`、`--masscan`、`--detect-net` 网卡探测）；
-- **新增 `.gitignore`**、`.dockerignore`（Dockerfile 尚待补，见未完成项）。
+- **新增 `.gitignore`、`.dockerignore`、`Dockerfile`、`docker-compose.yml`**：
+  - Dockerfile：`python:3.13-slim` + libpcap + masscan（Debian 源）、`NETATLAS_PATHS__ROOT=/app`、编译检查、默认 `--dry-run` 入口；
+  - docker-compose：`network_mode: host`、`cap_add: NET_RAW/NET_ADMIN`、数据卷持久化、机器相关配置全部经 `NETATLAS_*` 环境变量注入（不进镜像）。
 
 ### 1.4 异常处理 —— **已完成 ✅**
 - **新增 `orchestrator/errors.py`**：`retry()` 指数退避装饰器（仅重试瞬时错误、可选降级返回 None）、`ErrorReporter` 结构化错误总线（环形缓冲 + 告警钩子 + 计数 + `degrade()` 降级记录）；
@@ -117,8 +121,8 @@
 
 | 优先级 | 项目 | 说明 |
 |---|---|---|
-| **高** | **Docker 容器化** | `.dockerignore` 已写，**Dockerfile 与 docker-compose.yml 尚未创建**。要点：基础镜像 `python:3.13-slim`；安装 libpcap、masscan（需编译）；挂载 `data/` `config/` `bin/`；capabilities `NET_RAW+NET_ADMIN`；compose 里加 netatlas-webui 服务与可选多节点分片示例 |
-| **高** | **README / CHANGELOG 重写** | 用户本次明确要求「GitHub README 不动」，故未改。README 仍写"13 项单元测试"（**已过时，实为 126 项**），且未反映新架构（异步 DNS、状态机、分片、动态调速、新 API、setup_deps.py）。需另建 `CHANGELOG.md` |
+| **高** | **推送到 GitHub** | 仅剩授权环节。拿到 PAT 后执行：`git remote set-url origin https://<TOKEN>@github.com/SourcePointRox/Internet-scanning.git && git push -u origin main`（或 `git -c credential.helper='!f() { echo username=SourcePointRox; echo password=<TOKEN>; }; f' push -u origin main`） |
+| **高** | **README / CHANGELOG 重写** | 用户本次明确要求「GitHub README 不动」，故未改。README 仍写"13 项单元测试"（**已过时，实为 126 项**），且未反映新架构（异步 DNS、状态机、分片、动态调速、新 API、setup_deps.py、Docker）。需另建 `CHANGELOG.md` |
 | 中 | 端到端全链路联调 | `python scripts/start.py --dry-run` 后的运行时冒烟尚未跑（dry-run 路径已单测覆盖）。建议补 `tests/test_smoke_pipeline.py`：启动 Orchestrator→过流水线→校验落盘 |
 | 中 | 分布式协调器真实实现 | 仅 `LocalShardCoordinator`。HTTP 协调器（节点注册/心跳/分片认领）未实现 |
 | 中 | IPv6 TGA 真实 hitlist 验证 | 目前用合成数据（6Tree 重叠率 62%）。可接 `https://ipv6hitlist.github.io` 真实种子做一次离线评估，`config.ipv6_tga.seed_sources` 已预留 |
@@ -186,17 +190,24 @@ requirements.txt                # 版本约束
 
 ---
 
-## 6. 参考：本次推送的 Git 信息
+## 6. Git 状态（交接）
+
+仓库此前**不是** Git 仓库（无 `.git` 目录），本次为首次初始化。当前状态：
 
 ```bash
-git init
-git remote add origin https://github.com/SourcePointRox/Internet-scanning.git
-git add -A
-git commit -m "..."
-git branch -M main
-git push -u origin main
+git remote -v    # origin https://github.com/SourcePointRox/Internet-scanning.git
+git log --oneline
+# 483b573 test: 修复 IPv6 hitlist 与 L4 暂停续扫用例的稳定性；补充优化进度文档
+# 959e0e3 wip: 基础设施重构与测试补齐（配置/持久化/调速/错误/WEBUI）
+git branch       # main（已 git branch -M main）
 ```
 
-- 仓库此前**不是** Git 仓库（无 `.git` 目录），本次为首次初始化并推送。
-- 主分支：`main`。
-- `README.md` 按要求保持原样（未修改）。
+- 两个提交均**尚未推送**（`git push` 因缺少凭据失败：本机 GCM 需要 `/dev/tty` 交互式提示，而该环境无 TTY）。
+- 推送方式（任选）：
+  1. 提供 Personal Access Token（需 `repo` 权限）：
+     ```bash
+     git remote set-url origin https://<TOKEN>@github.com/SourcePointRox/Internet-scanning.git
+     git push -u origin main
+     ```
+  2. 在已有终端中先 `git credential-manager github login` 完成授权后再 `git push -u origin main`。
+- `README.md` 按用户要求保持原样（未修改）。
